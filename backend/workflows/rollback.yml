@@ -1,0 +1,108 @@
+name: Production Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to redeploy'
+        required: true
+        type: string
+      deployment_id:
+        description: 'Original deployment ID to roll back to'
+        required: true
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: 123456789012.dkr.ecr.us-east-1.amazonaws.com/codebidi-platform
+  EC2_HOST: ec2-54-210-92-14.compute-1.amazonaws.com
+  APP_PORT: 8080
+
+jobs:
+  rollback:
+    name: Execute Production Rollback
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Image Tag Input
+        run: |
+          TAG="${{ github.event.inputs.image_tag }}"
+          if [[ ! "$TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Error: Invalid image tag format: $TAG"
+            exit 1
+          fi
+          echo "IMAGE_TAG=$TAG" >> $GITHUB_ENV
+          echo "IMAGE_URI=${{ env.ECR_REPOSITORY }}:$TAG" >> $GITHUB_ENV
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Authenticate Docker to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Redeploy Image to EC2 and Health Check
+        id: redeploy
+        env:
+          EC2_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        run: |
+          echo "$EC2_KEY" > deploy_key.pem && chmod 600 deploy_key.pem
+
+          ssh -o StrictHostKeyChecking=no -i deploy_key.pem ubuntu@${{ env.EC2_HOST }} \
+            "docker pull ${{ env.IMAGE_URI }} && \
+             docker stop devops-web-temp || true && \
+             docker run -d --name devops-web-rollback -p ${{ env.APP_PORT }}:8000 ${{ env.IMAGE_URI }}"
+
+          echo "Verifying health of rolled-back container..."
+          HEALTHY=false
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ env.EC2_HOST }}:${{ env.APP_PORT }}/health || true)
+            if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 400 ]; then
+              HEALTHY=true
+              break
+            fi
+            sleep 3
+          done
+
+          if [ "$HEALTHY" = "true" ]; then
+            echo "Rollback health probe passed."
+            ssh -o StrictHostKeyChecking=no -i deploy_key.pem ubuntu@${{ env.EC2_HOST }} \
+              "docker rm -f devops-web || true && docker rename devops-web-rollback devops-web"
+            echo "DEPLOY_STATUS=success" >> $GITHUB_ENV
+            echo "DEPLOY_HEALTH=healthy" >> $GITHUB_ENV
+          else
+            echo "Rollback container failed health probe!"
+            ssh -o StrictHostKeyChecking=no -i deploy_key.pem ubuntu@${{ env.EC2_HOST }} \
+              "docker rm -f devops-web-rollback || true"
+            echo "DEPLOY_STATUS=failed" >> $GITHUB_ENV
+            echo "DEPLOY_HEALTH=unhealthy" >> $GITHUB_ENV
+            exit 1
+          fi
+
+      - name: Post Signed Webhook to Dashboard
+        if: always()
+        env:
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          DASHBOARD_URL: ${{ secrets.DASHBOARD_API_URL }}
+        run: |
+          STATUS="${DEPLOY_STATUS:-failed}"
+          HEALTH="${DEPLOY_HEALTH:-unknown}"
+
+          BODY=$(jq -n \
+            --arg image_tag "${{ env.IMAGE_TAG }}" \
+            --arg image_uri "${{ env.IMAGE_URI }}" \
+            --arg status "$STATUS" \
+            --arg health "$HEALTH" \
+            --arg rolled_back_from "${{ github.event.inputs.deployment_id }}" \
+            --arg author "${{ github.actor }}" \
+            --arg commit_message "Production rollback to ${{ env.IMAGE_TAG }}" \
+            '{image_tag: $image_tag, image_uri: $image_uri, status: $status, health: $health, rolled_back_from: $rolled_back_from, author: $author, commit_message: $commit_message}')
+
+          SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | sed 's/^.* //')
+
+          curl -s -X POST "${DASHBOARD_URL}/api/webhooks/deployment" \
+            -H "Content-Type: application/json" \
+            -H "X-Signature-256: sha256=$SIG" \
+            -d "$BODY" || echo "Rollback webhook notification sent."

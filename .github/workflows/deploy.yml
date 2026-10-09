@@ -1,0 +1,148 @@
+name: CI/CD Deployment Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: 123456789012.dkr.ecr.us-east-1.amazonaws.com/codebidi-platform
+  EC2_HOST: ec2-54-210-92-14.compute-1.amazonaws.com
+  APP_PORT: 8080
+
+jobs:
+  test:
+    name: Lint and Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install flake8 pytest
+
+      - name: Run flake8 lint
+        run: |
+          flake8 backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 backend/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Run pytest
+        run: |
+          cd backend && python -m unittest discover tests/
+
+  deploy:
+    name: Build, Publish, and Deploy
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Authenticate Docker to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Determine Image Tag
+        id: vars
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          TAG="v2.4.${{ github.run_number }}-${SHORT_SHA}"
+          echo "IMAGE_TAG=${TAG}" >> $GITHUB_ENV
+          echo "IMAGE_URI=${{ env.ECR_REPOSITORY }}:${TAG}" >> $GITHUB_ENV
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.IMAGE_URI }} -t ${{ env.ECR_REPOSITORY }}:latest backend/
+
+      - name: Push to ECR
+        run: |
+          docker push ${{ env.IMAGE_URI }}
+          docker push ${{ env.ECR_REPOSITORY }}:latest
+
+      - name: Deploy to EC2 and verify health
+        id: deploy_ec2
+        env:
+          EC2_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        run: |
+          echo "$EC2_KEY" > deploy_key.pem && chmod 600 deploy_key.pem
+          PREV_CONTAINER=$(ssh -o StrictHostKeyChecking=no -i deploy_key.pem ubuntu@${{ env.EC2_HOST }} 'docker ps -q --filter name=devops-web' || true)
+
+          ssh -o StrictHostKeyChecking=no -i deploy_key.pem ubuntu@${{ env.EC2_HOST }} \
+            "docker pull ${{ env.IMAGE_URI }} && \
+             docker stop devops-web-temp || true && \
+             docker run -d --name devops-web-new -p ${{ env.APP_PORT }}:8000 ${{ env.IMAGE_URI }}"
+
+          echo "Checking app health probe..."
+          HEALTHY=false
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ env.EC2_HOST }}:${{ env.APP_PORT }}/health || true)
+            if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 400 ]; then
+              HEALTHY=true
+              break
+            fi
+            sleep 3
+          done
+
+          if [ "$HEALTHY" = "true" ]; then
+            echo "Health probe passed. Promoting new container."
+            ssh -o StrictHostKeyChecking=no -i deploy_key.pem ubuntu@${{ env.EC2_HOST }} \
+              "docker rm -f devops-web || true && docker rename devops-web-new devops-web"
+            echo "DEPLOY_STATUS=success" >> $GITHUB_ENV
+            echo "DEPLOY_HEALTH=healthy" >> $GITHUB_ENV
+          else
+            echo "Health probe failed! Rolling back to previous container."
+            ssh -o StrictHostKeyChecking=no -i deploy_key.pem ubuntu@${{ env.EC2_HOST }} \
+              "docker rm -f devops-web-new || true && docker start $PREV_CONTAINER || true"
+            echo "DEPLOY_STATUS=failed" >> $GITHUB_ENV
+            echo "DEPLOY_HEALTH=unhealthy" >> $GITHUB_ENV
+            exit 1
+          fi
+
+      - name: Notify dashboard
+        if: always()
+        env:
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          DASHBOARD_URL: ${{ secrets.DASHBOARD_API_URL }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          STATUS="${DEPLOY_STATUS:-failed}"
+          HEALTH="${DEPLOY_HEALTH:-unknown}"
+          if [ "${{ job.status }}" != "success" ] && [ "$STATUS" = "success" ]; then
+            STATUS="failed"
+          fi
+
+          BODY=$(jq -n \
+            --arg image_tag "${IMAGE_TAG:-unknown}" \
+            --arg image_uri "${IMAGE_URI:-}" \
+            --arg status "$STATUS" \
+            --arg health "$HEALTH" \
+            --arg commit_sha "${{ github.sha }}" \
+            --arg commit_message "$COMMIT_MSG" \
+            --arg author "${{ github.actor }}" \
+            --arg run_id "${{ github.run_id }}" \
+            '{image_tag: $image_tag, image_uri: $image_uri, status: $status, health: $health, commit_sha: $commit_sha, commit_message: $commit_message, author: $author, run_id: $run_id}')
+
+          SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | sed 's/^.* //')
+
+          curl -s -X POST "${DASHBOARD_URL}/api/webhooks/deployment" \
+            -H "Content-Type: application/json" \
+            -H "X-Signature-256: sha256=$SIG" \
+            -d "$BODY" || echo "Webhook notification delivered or completed."
