@@ -14,7 +14,7 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [repoName, setRepoName] = useState('codebidi/ai-devops-platform');
+  const [repoName, setRepoName] = useState('codebidi/automated-devops-platform');
 
   // Background 10s auto-polling simulation hook
   const { isRefreshing, lastUpdated, refreshNow } = usePolling(() => {
