@@ -7,11 +7,11 @@ let isAuthenticating = null;
 /**
  * Ensures an active authentication Bearer token is available.
  */
-async function getAuthToken() {
-  if (cachedToken) {
+async function getAuthToken(force = false) {
+  if (cachedToken && !force) {
     return cachedToken;
   }
-  if (isAuthenticating) {
+  if (isAuthenticating && !force) {
     return isAuthenticating;
   }
 
@@ -44,13 +44,35 @@ async function getAuthToken() {
 /**
  * Common headers with Bearer token if authenticated.
  */
-async function getHeaders() {
-  const token = await getAuthToken();
+async function getHeaders(force = false) {
+  const token = await getAuthToken(force);
   const headers = { 'Content-Type': 'application/json' };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
   return headers;
+}
+
+/**
+ * Executes a fetch request with automatic authentication and transparent retry on 401.
+ */
+async function fetchWithAuth(url, options = {}) {
+  const headers = await getHeaders();
+  let res = await fetch(url, {
+    ...options,
+    headers: { ...headers, ...(options.headers || {}) },
+  });
+
+  if (res.status === 401) {
+    cachedToken = null;
+    const retryHeaders = await getHeaders(true);
+    res = await fetch(url, {
+      ...options,
+      headers: { ...retryHeaders, ...(options.headers || {}) },
+    });
+  }
+
+  return res;
 }
 
 /**
@@ -104,8 +126,7 @@ export async function fetchRuns(filters = {}) {
     if (filters.search) params.append('search', filters.search);
     params.append('per_page', '100');
 
-    const headers = await getHeaders();
-    const res = await fetch(`${API_BASE}/runs?${params.toString()}`, { headers });
+    const res = await fetchWithAuth(`${API_BASE}/runs?${params.toString()}`);
     if (res.ok) {
       const data = await res.json();
       const rawItems = Array.isArray(data) ? data : (data.items || []);
@@ -146,8 +167,7 @@ export async function fetchRuns(filters = {}) {
  */
 export async function fetchRunById(id) {
   try {
-    const headers = await getHeaders();
-    const res = await fetch(`${API_BASE}/runs/${id}`, { headers });
+    const res = await fetchWithAuth(`${API_BASE}/runs/${id}`);
     if (res.ok) {
       const runData = await res.json();
       const run = normalizeRun(runData);
@@ -156,7 +176,7 @@ export async function fetchRunById(id) {
       for (const s of run.stages) {
         if (!s.logs || s.logs.length === 0) {
           try {
-            const lRes = await fetch(`${API_BASE}/runs/${id}/stages/${s.id}/logs`, { headers });
+            const lRes = await fetchWithAuth(`${API_BASE}/runs/${id}/stages/${s.id}/logs`);
             if (lRes.ok) {
               const lData = await lRes.json();
               s.logs = lData.lines || [];
@@ -184,8 +204,7 @@ export async function fetchRunById(id) {
  */
 export async function fetchDeployments() {
   try {
-    const headers = await getHeaders();
-    const res = await fetch(`${API_BASE}/deployments`, { headers });
+    const res = await fetchWithAuth(`${API_BASE}/deployments`);
     if (res.ok) {
       const data = await res.json();
       const list = Array.isArray(data) ? data : (data.items || []);
@@ -230,8 +249,7 @@ export async function fetchDeployments() {
  */
 export async function fetchCurrentlyDeployed() {
   try {
-    const headers = await getHeaders();
-    const res = await fetch(`${API_BASE}/deployments/current`, { headers });
+    const res = await fetchWithAuth(`${API_BASE}/deployments/current`);
     if (res.ok) {
       const d = await res.json();
       if (d) {
@@ -273,8 +291,7 @@ export async function fetchCurrentlyDeployed() {
  */
 export async function fetchPlatformConfig() {
   try {
-    const headers = await getHeaders();
-    const res = await fetch(`${API_BASE}/settings`, { headers });
+    const res = await fetchWithAuth(`${API_BASE}/settings`);
     if (res.ok) {
       const data = await res.json();
       return {
@@ -313,17 +330,15 @@ export async function updatePlatformConfig(updates) {
  */
 export async function rollbackDeployment(targetRunId) {
   try {
-    const headers = await getHeaders();
     // Resolve target deployment id
-    const depsRes = await fetch(`${API_BASE}/deployments`, { headers });
+    const depsRes = await fetchWithAuth(`${API_BASE}/deployments`);
     if (depsRes.ok) {
       const list = await depsRes.json();
       const target = list.find(d => String(d.id) === String(targetRunId) || String(d.run_id) === String(targetRunId));
       const targetId = target ? target.id : targetRunId;
 
-      const res = await fetch(`${API_BASE}/deployments/${targetId}/rollback`, {
+      const res = await fetchWithAuth(`${API_BASE}/deployments/${targetId}/rollback`, {
         method: 'POST',
-        headers,
       });
 
       if (res.ok) {

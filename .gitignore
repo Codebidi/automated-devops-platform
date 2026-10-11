@@ -28,3 +28,7 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Docker / root secrets – never commit real credentials
+.env
+database/backups/

@@ -43,6 +43,7 @@ class Config:
     admin_password: str | None = None
     cors_origins: tuple[str, ...] = ("http://localhost:5173",)
     database_path: str = "data/cicd.db"
+    database_url: str | None = None
     cache_ttl_seconds: int = 10
     port: int = 8000
 
@@ -75,6 +76,7 @@ def load_config(overrides: dict | None = None) -> Config:
             if origin.strip()
         ),
         "database_path": os.environ.get("DATABASE_PATH", "data/cicd.db"),
+        "database_url": os.environ.get("DATABASE_URL"),
         "cache_ttl_seconds": int(os.environ.get("CACHE_TTL_SECONDS", 10)),
         "port": int(os.environ.get("PORT", 8000)),
     }
@@ -83,6 +85,13 @@ def load_config(overrides: dict | None = None) -> Config:
         values.update(overrides)
 
     cfg = Config(**values)
+
+    # Validate DATABASE_URL prefix if provided
+    if cfg.database_url is not None:
+        if not (cfg.database_url.startswith("postgresql://") or cfg.database_url.startswith("postgres://")):
+            raise ValueError(
+                "DATABASE_URL must start with postgresql:// or postgres://"
+            )
 
     # Fail fast validations
     if not cfg.use_mock:

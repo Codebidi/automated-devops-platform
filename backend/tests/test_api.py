@@ -388,7 +388,7 @@ class TestWebhooks(TestApiBase):
             data=body,
             headers={"Content-Type": "application/json", "X-Signature-256": sig}
         )
-        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.status_code, 201)
         data = res.get_json()
         self.assertEqual(data["image_tag"], "v2.4.99-xyz1234")
         self.assertTrue(data["is_current"])
@@ -434,7 +434,7 @@ class TestWebhooks(TestApiBase):
         payload = {"image_tag": "v-failed-test-1", "status": "failed", "health": "unhealthy"}
         body = json.dumps(payload).encode("utf-8")
         res = self.client.post("/api/webhooks/deployment", data=body, headers={"Content-Type": "application/json", "X-Signature-256": self._sign_webhook(body)})
-        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.status_code, 201)
         self.assertFalse(res.get_json()["is_current"])
 
         # Current should still be original
@@ -452,7 +452,7 @@ class TestWebhooks(TestApiBase):
         }
         body = json.dumps(payload).encode("utf-8")
         res = self.client.post("/api/webhooks/deployment", data=body, headers={"Content-Type": "application/json", "X-Signature-256": self._sign_webhook(body)})
-        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.status_code, 201)
         saved = res.get_json()
         self.assertEqual(saved["commit_sha"], curr["commit_sha"])
         self.assertEqual(saved["commit_message"], curr["commit_message"])

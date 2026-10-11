@@ -1,26 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { Rocket, CheckCircle2, History, AlertCircle } from 'lucide-react';
+import { Rocket, CheckCircle2, History, AlertCircle, RotateCcw, Shield } from 'lucide-react';
 import DeploymentTimeline from '../components/DeploymentTimeline';
-import ConfirmModal from '../components/ConfirmModal';
-import LoadingSkeleton from '../components/LoadingSkeleton';
-import EmptyState from '../components/EmptyState';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { Button, Modal, Input, Card, Skeleton, EmptyState } from '../components/ui';
 import { fetchDeployments, rollbackDeployment } from '../api/pipelineApi';
 import { formatSha } from '../utils/formatters';
 
 export default function Deployments() {
+  const { isAdmin } = useAuth();
+  const toast = useToast();
   const [deployments, setDeployments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [typedConfirm, setTypedConfirm] = useState('');
   const [rollingBack, setRollingBack] = useState(false);
-  const [feedback, setFeedback] = useState(null);
 
   const loadDeployments = async () => {
     try {
+      setLoading(true);
       const data = await fetchDeployments();
-      setDeployments(data);
+      setDeployments(data || []);
     } catch (err) {
-      console.error("Failed to load deployments", err);
+      console.error('Failed to load deployments', err);
+      toast.error('Failed to load deployment records.');
     } finally {
       setLoading(false);
     }
@@ -32,118 +36,142 @@ export default function Deployments() {
 
   const handleInitiateRollback = (item) => {
     setSelectedTarget(item);
+    setTypedConfirm('');
     setModalOpen(true);
   };
 
   const handleConfirmRollback = async () => {
-    if (!selectedTarget) return;
+    if (!selectedTarget || typedConfirm !== 'ROLLBACK') return;
     setRollingBack(true);
     try {
-      const res = await rollbackDeployment(selectedTarget.runId);
+      await rollbackDeployment(selectedTarget.runId);
       setModalOpen(false);
-      setFeedback({
-        type: 'success',
-        message: `Rollback triggered! Successfully designated commit ${formatSha(selectedTarget.commitSha)} as live production version.`
-      });
-      // Refresh deployments list
+      toast.success(
+        `Rollback triggered! Successfully restored commit ${formatSha(selectedTarget.commitSha)} as live.`
+      );
       await loadDeployments();
     } catch (err) {
-      setFeedback({
-        type: 'error',
-        message: err.message || 'Failed to rollback deployment'
-      });
+      toast.error(err.message || 'Failed to trigger rollback');
     } finally {
       setRollingBack(false);
-      setTimeout(() => setFeedback(null), 6000);
     }
   };
 
+  const currentLive = deployments.find(d => d.isCurrentLive);
+
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 animate-fade-in pb-12">
       {/* Header */}
       <div>
-        <h1 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
-          Production Deployments
+        <h1 className="text-2xl font-heading font-extrabold text-content-primary tracking-tight">
+          Deployments & Rollbacks
         </h1>
-        <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Immutable release history on AWS EC2 with instant one-click rollback capabilities.
+        <p className="mt-1 text-xs sm:text-sm text-content-secondary">
+          Audit chronological container promotions and perform verified single-command rollbacks.
         </p>
       </div>
 
-      {/* Feedback banner */}
-      {feedback && (
-        <div
-          className={`p-4 rounded-xl border flex items-center justify-between text-xs font-medium animate-fadeIn ${
-            feedback.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-              : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
-          }`}
-          role="alert"
-        >
-          <div className="flex items-center gap-2">
-            {feedback.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
-            )}
-            <span>{feedback.message}</span>
+      {/* Current Active Release Banner */}
+      {currentLive && (
+        <Card className="p-6 bg-gradient-to-r from-emerald-500/10 via-brand-500/5 to-transparent border-emerald-500/30">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                  Active Live Release
+                </span>
+                <p className="font-heading font-bold text-sm text-content-primary">
+                  {currentLive.commitMessage}
+                </p>
+                <p className="text-xs font-mono text-content-muted mt-0.5">
+                  SHA: {formatSha(currentLive.commitSha)} • Tag: {currentLive.imageTag}
+                </p>
+              </div>
+            </div>
+
+            <div className="text-right text-xs text-content-secondary font-mono">
+              Deployed: {new Date(currentLive.timestamp).toLocaleString()}
+            </div>
           </div>
-          <button
-            onClick={() => setFeedback(null)}
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-          >
-            &times;
-          </button>
-        </div>
+        </Card>
       )}
 
-      {/* Main Timeline Content */}
-      {loading ? (
-        <div className="space-y-4">
-          <LoadingSkeleton variant="card" count={3} />
-        </div>
-      ) : deployments.length === 0 ? (
-        <EmptyState
-          title="No deployments found"
-          description="Successful pushes to main automatically record deployment events here."
-        />
-      ) : (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-100 dark:border-slate-800">
-            <div className="flex items-center gap-2">
-              <History className="w-4 h-4 text-slate-500" aria-hidden="true" />
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
-                Deployment Audit Log
-              </h2>
-            </div>
-            <span className="text-xs font-mono text-slate-500">
-              {deployments.length} releases available
-            </span>
+      {/* Deployment Timeline */}
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-6 pb-3 border-b border-border-subtle">
+          <div className="flex items-center gap-2">
+            <History className="w-4 h-4 text-brand-500" />
+            <h2 className="text-sm font-heading font-bold text-content-primary">
+              Promotion Timeline
+            </h2>
           </div>
+          <span className="text-xs text-content-muted">
+            {deployments.length} releases recorded
+          </span>
+        </div>
 
+        {loading ? (
+          <Skeleton variant="card" count={3} />
+        ) : (
           <DeploymentTimeline
             deployments={deployments}
             onInitiateRollback={handleInitiateRollback}
+            isAdmin={isAdmin}
           />
-        </div>
-      )}
+        )}
+      </Card>
 
-      {/* Confirmation Modal */}
-      <ConfirmModal
+      {/* Rollback Typed Confirmation Modal */}
+      <Modal
         isOpen={modalOpen}
-        title="Confirm Production Rollback"
-        description={
-          selectedTarget
-            ? `Are you sure you want to rollback production to commit ${formatSha(selectedTarget.commitSha)} (${selectedTarget.imageTag})? The EC2 container will switch immediately.`
-            : 'Are you sure you want to rollback?'
-        }
-        confirmText="Confirm Rollback"
-        cancelText="Cancel"
-        isDestructive={false}
-        isLoading={rollingBack}
-        onConfirm={handleConfirmRollback}
         onClose={() => setModalOpen(false)}
-      />
+        title="Confirm Emergency Rollback"
+        description="This will redirect active live production traffic to an earlier container image."
+      >
+        <div className="space-y-4">
+          <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold block">Target Release</span>
+              Commit: <strong className="font-mono">{formatSha(selectedTarget?.commitSha)}</strong> (
+              {selectedTarget?.imageTag})
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-content-secondary block">
+              Type <strong className="text-rose-500 font-mono">ROLLBACK</strong> to confirm this operation:
+            </label>
+            <Input
+              placeholder="Type ROLLBACK"
+              value={typedConfirm}
+              onChange={(e) => setTypedConfirm(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-border-subtle">
+            <Button
+              variant="secondary"
+              onClick={() => setModalOpen(false)}
+              disabled={rollingBack}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleConfirmRollback}
+              isLoading={rollingBack}
+              disabled={typedConfirm !== 'ROLLBACK' || rollingBack}
+            >
+              Execute Rollback
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

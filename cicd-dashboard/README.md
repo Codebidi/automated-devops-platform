@@ -1,172 +1,104 @@
-# Automated CI/CD Deployment Platform Dashboard
+# DeployHub — CI/CD Deployment Console & Platform
 
-A clean, responsive developer dashboard for monitoring real-time CI/CD pipelines triggered by Git pushes and pull requests. Tracks every pipeline stage (Lint + Test, Build Docker Image, Push to ECR, Deploy to EC2), monitors live application health endpoints, provides historical audit logs, and allows instant production rollbacks.
-
----
-
-## 🛠 Tech Stack
-
-- **Framework**: React 18 + Vite
-- **Styling**: Tailwind CSS (with native dark/light theme support)
-- **Routing**: React Router v6
-- **Icons**: Lucide React
-- **Charts & Telemetry**: Recharts
-- **Data Layer**: Modular API abstraction (`src/api/pipelineApi.js`) with realistic mock state (`src/data/mockRuns.js`)
+DeployHub is an enterprise-grade CI/CD deployment platform featuring an automated 4-stage pipeline gate, instantaneous 1-click rollbacks, role-based governance, and a unified dual-engine database layer (SQLite for development & PostgreSQL 16 for production).
 
 ---
 
-## 🚀 Getting Started
+## 🗺️ Application Routes
 
-### 1. Installation
-Install project dependencies:
+| Path | Access Tier | Description |
+| :--- | :--- | :--- |
+| `/` | **Public** | High-polish landing page showcasing pipeline visual, capabilities, stats, roles & security |
+| `/login` | **Public** | Split-screen authentication with CapsLock warning, password toggle, and quick-fill demo chips |
+| `/app` | **Authenticated** | Executive Dashboard: live deployed container, trend sparklines, velocity charts, recent runs |
+| `/app/runs` | **Authenticated** | Searchable & filterable CI/CD pipeline runs with segmented status filters |
+| `/app/runs/:id`| **Authenticated** | Detailed pipeline stepper & terminal log viewer (Developer+ to inspect raw logs) |
+| `/app/deployments` | **Authenticated** | Historical release timeline, live target badge & typed-confirmation rollback (**Admin only**) |
+| `/app/users` | **Admin Only** | User governance: account creation, role assignments (Viewer/Developer/Admin), status toggles |
+| `/app/settings` | **Admin Only** | Infrastructure targets, connected GitHub repository, and required environment secrets checklist |
+| `*` | **Public** | Styled 404 resource-not-found screen |
+
+---
+
+## 🎨 Design System Overview
+
+DeployHub utilizes a custom, tokenized design system built on CSS custom properties and Tailwind CSS 3, providing parity across light and dark modes:
+
+### 1. Typography
+- **Headings**: `@fontsource-variable/plus-jakarta-sans` with geometric precision and tight tracking (`-0.025em`).
+- **Body**: `@fontsource-variable/inter` with tabular numerals and clean legibility.
+- **Terminal & Monospace**: `JetBrains Mono` / system monospace for commit SHAs, logs, and container tags.
+- **Fluid Type Scale**: Defined with responsive `clamp()` functions (`.text-display`, `.text-h1`, `.text-h2`, `.text-h3`, `.text-h4`).
+
+### 2. Color Tokens & Layers
+All colors map directly to CSS variables defined in `src/index.css`:
+- **Canvas & Surfaces**:
+  - Light: `--bg-canvas` (`#f8fafc`), `--bg-surface` (`#ffffff`), `--bg-subtle` (`#f1f5f9`)
+  - Dark: `--bg-canvas` (`#060911`), `--bg-surface` (`#0c1222`), `--bg-surface-elevated` (`#111a33`)
+- **Brand Accent**: Deep Indigo (`#4f46e5`) &rarr; Violet (`#7c3aed`) &rarr; Cyan (`#06b6d4`)
+- **Semantic Statuses**:
+  - Success: `#10b981` (Emerald)
+  - Warning: `#f59e0b` (Amber)
+  - Danger: `#ef4444` (Rose)
+  - Info: `#3b82f6` (Blue)
+- **Glow Shadows**: `--glow-brand`, `--glow-cyan`, `--glow-emerald`
+- **Glassmorphism**: `.glass-card` uses `backdrop-filter: blur(16px)` with subtle border highlights.
+
+### 3. Motion & Accessibility
+- **CSS Transitions**: Subtly applied to button active states (`active:scale-[0.98]`), hover elevations, and theme toggling.
+- **Reduced Motion**: Full override under `@media (prefers-reduced-motion: reduce)` disabling animations and transitions.
+- **Color Independence**: Status is never communicated by color alone (always paired with icon indicators and accessible text).
+
+---
+
+## 🖌️ How to Change Brand Colors
+
+To customize the primary brand palette across the entire application:
+
+1. Open `src/index.css`.
+2. Locate the Brand Accents section under `:root` and `.dark`:
+   ```css
+   :root {
+     --brand-primary: #4f46e5;
+     --brand-violet: #7c3aed;
+     --brand-cyan: #06b6d4;
+     --brand-gradient: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-violet) 50%, var(--brand-cyan) 100%);
+     --glow-brand: 0 0 25px -4px rgba(79, 70, 229, 0.35);
+   }
+   ```
+3. Update the hex values and gradient stops. All UI components, buttons, glows, gradient texts, and charts will adapt automatically.
+
+---
+
+## 👥 Role Permissions Matrix
+
+| Feature | Viewer | Developer | Administrator |
+| :--- | :---: | :---: | :---: |
+| View Pipeline Runs & Status | ✅ | ✅ | ✅ |
+| Monitor Live Application Health | ✅ | ✅ | ✅ |
+| Inspect Historical Releases | ✅ | ✅ | ✅ |
+| View Raw Terminal Stage Logs | 🔒 Restricted | ✅ | ✅ |
+| Trigger Emergency Rollbacks | ❌ | ❌ | ✅ |
+| Add / Manage Platform Users | ❌ | ❌ | ✅ |
+| Modify System Settings & Secrets | ❌ | ❌ | ✅ |
+
+---
+
+## ⚡ Quick-Start Development
+
 ```bash
+# 1. Install dependencies
 npm install
-```
 
-### 2. Development Server
-Start the local Vite development server:
-```bash
+# 2. Start development server
 npm run dev
-```
-Open your browser at `http://localhost:5173`.
+# Dashboard opens on http://localhost:5173
 
-### 3. Production Build
-Compile and bundle optimized static assets for production:
-```bash
+# 3. Production build validation
 npm run build
 ```
 
-### 4. Preview Production Build
-Preview the generated production build locally:
-```bash
-npm run preview
-```
-
----
-
-## 📁 Project Structure
-
-```text
-cicd-dashboard/
-├── index.html              # Entry HTML with typography and viewport settings
-├── package.json            # Scripts & project dependencies
-├── vite.config.js          # Vite config with React plugin
-├── tailwind.config.js      # Tailwind configuration with class-based dark mode
-├── postcss.config.js       # PostCSS configuration
-├── README.md               # Architecture documentation and guides
-└── src/
-    ├── main.jsx            # Application root mounting BrowserRouter
-    ├── App.jsx             # Shell layout, theme state, routes & polling hook
-    ├── index.css           # Global typography & custom scrollbars
-    ├── api/
-    │   └── pipelineApi.js  # Clean async API layer (swappable for GitHub Actions)
-    ├── data/
-    │   └── mockRuns.js     # 28 realistic runs with stages, logs, and configs
-    ├── hooks/
-    │   └── usePolling.js   # 10-second polling & manual refresh hook
-    ├── utils/
-    │   └── formatters.js   # SHA, duration, and status styling formatters
-    ├── components/
-    │   ├── Sidebar.jsx           # Responsive collapsible sidebar navigation
-    │   ├── Topbar.jsx            # Theme toggle, live timestamp & refresh button
-    │   ├── StatCard.jsx          # Metrics summary card
-    │   ├── StatusBadge.jsx       # Accessible status pill (success/failed/running/skipped)
-    │   ├── PipelineStepper.jsx   # 4-stage horizontal stepper with selection
-    │   ├── LogViewer.jsx         # Collapsible console log viewer with syntax styles
-    │   ├── RunsTable.jsx         # Accessible pipeline table with PR tags
-    │   ├── DeploymentTimeline.jsx# Release timeline with rollback actions
-    │   ├── HealthIndicator.jsx   # Production health check badge & probe status
-    │   ├── ConfirmModal.jsx      # Accessible keyboard-aware confirmation dialog
-    │   ├── EmptyState.jsx        # Configurable empty and error state display
-    │   └── LoadingSkeleton.jsx   # Skeleton loaders for cards, tables, steppers
-    └── pages/
-        ├── Dashboard.jsx   # High-level overview, live app card & Recharts
-        ├── Runs.jsx        # Searchable, filterable full pipeline runs table
-        ├── RunDetail.jsx   # Run metadata panel & 4-stage log stepper
-        ├── Deployments.jsx # Deployments timeline with rollback flow
-        └── Settings.jsx    # Infrastructure targets & GitHub secrets checklist
-```
-
----
-
-## 🔌 Replacing Mock API with GitHub Actions REST API
-
-All data access is intentionally encapsulated in `src/api/pipelineApi.js`. You can swap the mock functions with real GitHub REST API calls without modifying any UI components or pages.
-
-### Step 1: Configure Environment Variables
-Create a `.env` file in `cicd-dashboard/`:
-```env
-VITE_GITHUB_API_URL=https://api.github.com
-VITE_GITHUB_REPO_OWNER=antigravity
-VITE_GITHUB_REPO_NAME=ai-devops-platform
-VITE_GITHUB_TOKEN=ghp_yourPersonalAccessTokenHere
-```
-
-### Step 2: Endpoint Mapping in `src/api/pipelineApi.js`
-
-1. **Pipeline Runs (`fetchRuns`)**:
-   - **GitHub Endpoint**: `GET /repos/{owner}/{repo}/actions/runs`
-   - **Mapping**:
-     ```javascript
-     const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/runs`, {
-       headers: { Authorization: `Bearer ${token}` }
-     });
-     const data = await res.json();
-     return {
-       runs: data.workflow_runs.map(run => ({
-         id: String(run.id),
-         runNumber: run.run_number,
-         commitSha: run.head_sha,
-         commitMessage: run.head_commit?.message || '',
-         author: run.head_commit?.author?.name || run.actor.login,
-         branch: run.head_branch,
-         trigger: run.event === 'pull_request' ? 'pull_request' : 'push',
-         status: run.status === 'completed' 
-           ? (run.conclusion === 'success' ? 'success' : 'failed') 
-           : 'running',
-         duration: Math.round((new Date(run.updated_at) - new Date(run.run_started_at)) / 1000),
-         startedAt: new Date(run.run_started_at).toLocaleString(),
-       })),
-       total: data.total_count,
-       lastUpdated: new Date().toISOString()
-     };
-     ```
-
-2. **Stage Execution & Logs (`fetchRunById`)**:
-   - **GitHub Endpoint**: `GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs`
-   - **Job Logs**: `GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs`
-   - **Mapping**: Each workflow job maps to one of the 4 stages (`Lint + Test`, `Build Docker Image`, `Push to ECR`, `Deploy to EC2`). Any steps occurring after a failed step automatically carry a `skipped` conclusion in GitHub Actions.
-
-3. **Deployments History (`fetchDeployments`)**:
-   - **GitHub Endpoint**: `GET /repos/{owner}/{repo}/deployments`
-   - **Deployment Statuses**: `GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses`
-   - **Mapping**: Map `environment === 'production'` entries to the timeline list.
-
-4. **Rollback Trigger (`rollbackDeployment`)**:
-   - **GitHub Endpoint**: `POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches`
-   - **Payload**:
-     ```json
-     {
-       "ref": "main",
-       "inputs": {
-         "action": "rollback",
-         "target_sha": "7f3b89a"
-       }
-     }
-     ```
-
-5. **Secrets Checklist (`fetchPlatformConfig`)**:
-   - **GitHub Endpoint**: `GET /repos/{owner}/{repo}/actions/secrets`
-   - **Security**: The GitHub API returns secret names and updated timestamps only (secret values are never returned by the GitHub API, preserving security).
-
----
-
-## 🎨 Design & Accessibility Features
-
-- **Developer Aesthetics**: Minimalist dark/light mode inspired by GitHub Actions and Vercel.
-- **Accessibility**: 
-  - Semantic HTML (`<main>`, `<header>`, `<nav>`, `<aside>`, `<section>`, `<table>`).
-  - Colors are never the sole indicator of status (always paired with icons and text labels).
-  - Proper ARIA roles, live regions, and focus outlines (`focus-visible:ring-2`).
-  - Confirmation modals support keyboard navigation (`Escape` dismissal and tab trapping).
-- **Responsiveness**: Collapsible off-canvas mobile drawer under 768px with touch-friendly tap targets.
+**Seeded Test Credentials:**
+- **Admin**: `admin` / `Admin@12345`
+- **Developer**: `developer` / `Dev@123456`
+- **Viewer**: `viewer` / `View@12345`

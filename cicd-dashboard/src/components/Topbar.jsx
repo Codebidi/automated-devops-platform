@@ -1,76 +1,184 @@
-import React from 'react';
-import { Menu, Sun, Moon, RefreshCw, GitBranch, Shield } from 'lucide-react';
+import React, { useState } from 'react';
+import { useLocation, Link, useNavigate } from 'react-router-dom';
+import {
+  Menu,
+  Sun,
+  Moon,
+  RefreshCw,
+  GitBranch,
+  ChevronRight,
+  LogOut,
+  ExternalLink,
+  Shield,
+} from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+import { Avatar, Badge } from './ui';
 
 export default function Topbar({
   onToggleSidebar,
-  darkMode,
-  onToggleDarkMode,
   lastUpdated,
   isRefreshing,
   onManualRefresh,
-  repoName = 'codebidi/ai-devops-platform'
+  repoName = 'codebidi/ai-devops-platform',
 }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
   const formattedTime = lastUpdated
-    ? new Date(lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    ? new Date(lastUpdated).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
     : 'Just now';
 
+  // Compute breadcrumbs
+  const getBreadcrumb = () => {
+    const path = location.pathname;
+    if (path === '/app') return 'Dashboard';
+    if (path.startsWith('/app/runs/')) return 'Run Details';
+    if (path === '/app/runs') return 'Pipeline Runs';
+    if (path === '/app/deployments') return 'Deployments & Rollback';
+    if (path === '/app/users') return 'User Management';
+    if (path === '/app/settings') return 'System Settings';
+    return 'Console';
+  };
+
+  const handleLogout = () => {
+    logout(true);
+    navigate('/login');
+  };
+
   return (
-    <header className="sticky top-0 z-30 h-16 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 md:px-8 flex items-center justify-between">
-      {/* Left: Mobile hamburger & breadcrumb */}
+    <header className="sticky top-0 z-30 h-16 bg-surface/85 dark:bg-canvas/85 backdrop-blur-md border-b border-border-subtle px-4 md:px-8 flex items-center justify-between transition-colors">
+      {/* Left: Mobile Toggle & Breadcrumbs */}
       <div className="flex items-center gap-3">
         <button
+          type="button"
           onClick={onToggleSidebar}
-          className="md:hidden p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+          className="md:hidden p-2 rounded-xl text-content-secondary hover:text-content-primary hover:bg-surface-subtle"
           aria-label="Open navigation sidebar"
-          aria-expanded={false}
-          aria-controls="main-sidebar"
         >
-          <Menu className="w-5 h-5" aria-hidden="true" />
+          <Menu className="w-5 h-5" />
         </button>
 
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-sm text-slate-900 dark:text-white">
-            {repoName}
+        <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs">
+          <Link
+            to="/app"
+            className="text-content-muted hover:text-content-primary transition-colors font-medium hidden sm:inline"
+          >
+            DeployHub
+          </Link>
+          <ChevronRight className="w-3.5 h-3.5 text-content-muted hidden sm:inline" />
+          <span className="font-heading font-semibold text-content-primary">
+            {getBreadcrumb()}
           </span>
-          <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-            <GitBranch className="w-3 h-3" aria-hidden="true" />
+
+          <span className="ml-2 hidden lg:inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-surface-subtle text-content-secondary border border-border-subtle">
+            <GitBranch className="w-3 h-3 text-brand-500" />
             main
           </span>
-        </div>
+        </nav>
       </div>
 
-      {/* Right: Last updated, refresh button, dark mode toggle */}
+      {/* Right: Live Polling Indicator, Theme Toggle, User Menu */}
       <div className="flex items-center gap-3">
         {/* Polling / Last Updated status */}
-        <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-          <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
-          <span>Updated: <strong className="font-mono font-medium text-slate-700 dark:text-slate-300">{formattedTime}</strong></span>
+        <div className="hidden sm:flex items-center gap-2 text-xs text-content-secondary">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+          </span>
+          <span className="text-[11px] text-content-muted">
+            Live:{' '}
+            <strong className="font-mono font-medium text-content-secondary">
+              {formattedTime}
+            </strong>
+          </span>
         </div>
 
         {/* Manual Refresh button */}
         <button
+          type="button"
           onClick={onManualRefresh}
           disabled={isRefreshing}
-          className="p-2 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-          title="Refresh pipeline data now"
+          className="p-2 rounded-xl text-content-secondary hover:text-content-primary hover:bg-surface-subtle transition-colors"
+          title="Refresh live data now"
           aria-label="Refresh pipeline runs now"
         >
-          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-sky-500' : ''}`} aria-hidden="true" />
+          <RefreshCw
+            className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-brand-500' : ''}`}
+          />
         </button>
 
-        {/* Light / Dark Mode Toggle */}
+        {/* Theme Toggle Button */}
         <button
-          onClick={onToggleDarkMode}
-          className="p-2 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-          title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          type="button"
+          onClick={toggleTheme}
+          className="p-2 rounded-xl text-content-secondary hover:text-content-primary hover:bg-surface-subtle transition-colors"
+          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          {darkMode ? (
-            <Sun className="w-4 h-4 text-amber-400" aria-hidden="true" />
-          ) : (
-            <Moon className="w-4 h-4 text-slate-600" aria-hidden="true" />
-          )}
+          {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
         </button>
+
+        {/* User Menu Dropdown */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setUserMenuOpen(prev => !prev)}
+            className="flex items-center gap-2 p-1 rounded-xl hover:bg-surface-subtle transition-colors focus:outline-none"
+            aria-expanded={userMenuOpen}
+            aria-label="Open user profile menu"
+          >
+            <Avatar
+              name={user?.full_name || user?.username || 'Operator'}
+              role={user?.role}
+              size="sm"
+            />
+          </button>
+
+          {userMenuOpen && (
+            <div
+              className="absolute right-0 mt-2 w-56 p-2 rounded-2xl bg-surface dark:bg-surface-elevated border border-border-strong shadow-elevated z-50 animate-fade-up text-xs"
+              onClick={() => setUserMenuOpen(false)}
+            >
+              <div className="p-2 border-b border-border-subtle mb-1">
+                <p className="font-heading font-bold text-content-primary truncate">
+                  {user?.full_name || user?.username}
+                </p>
+                <p className="text-[11px] font-mono text-content-muted truncate">
+                  @{user?.username}
+                </p>
+                <div className="mt-1.5">
+                  <Badge variant={user?.role || 'viewer'} size="sm">
+                    {(user?.role || 'VIEWER').toUpperCase()}
+                  </Badge>
+                </div>
+              </div>
+
+              <Link
+                to="/"
+                className="flex items-center gap-2 p-2 rounded-xl hover:bg-surface-subtle text-content-secondary hover:text-content-primary transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Public Landing Page</span>
+              </Link>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="w-full flex items-center gap-2 p-2 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 transition-colors text-left"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sign Out of Console</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

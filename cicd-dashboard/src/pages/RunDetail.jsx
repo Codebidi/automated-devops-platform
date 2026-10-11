@@ -1,18 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
-  ArrowLeft, GitCommit, GitBranch, GitPullRequest, User,
-  Calendar, Clock, Server, Tag, Copy, Check, Terminal, ExternalLink
+  ArrowLeft,
+  GitCommit,
+  GitBranch,
+  GitPullRequest,
+  User,
+  Calendar,
+  Clock,
+  Server,
+  Tag,
+  Copy,
+  Check,
 } from 'lucide-react';
 import PipelineStepper from '../components/PipelineStepper';
-import StatusBadge from '../components/StatusBadge';
-import LoadingSkeleton from '../components/LoadingSkeleton';
-import EmptyState from '../components/EmptyState';
+import { useToast } from '../context/ToastContext';
+import { Button, Card, Badge, Skeleton, EmptyState } from '../components/ui';
 import { fetchRunById } from '../api/pipelineApi';
 import { formatSha } from '../utils/formatters';
 
 export default function RunDetail() {
   const { id } = useParams();
+  const toast = useToast();
   const [run, setRun] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -33,22 +42,24 @@ export default function RunDetail() {
       }
     }
     load();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [id]);
 
   const copyToClipboard = (text, key) => {
     if (!text) return;
     navigator.clipboard?.writeText(text);
     setCopiedKey(key);
+    toast.success('Copied to clipboard');
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <LoadingSkeleton variant="card" count={2} />
-        <LoadingSkeleton variant="stepper" />
-        <LoadingSkeleton variant="log" />
+      <div className="space-y-6 animate-fade-in">
+        <Skeleton variant="card" count={2} />
+        <Skeleton variant="card" count={1} />
       </div>
     );
   }
@@ -56,132 +67,122 @@ export default function RunDetail() {
   if (error || !run) {
     return (
       <EmptyState
-        variant="error"
         title="Pipeline Run Not Found"
-        description={error || `Could not find any pipeline run matching #${id}.`}
-        actionText="Back to Pipeline Runs"
-        onAction={() => window.history.back()}
+        description={error || `Pipeline run #${id} does not exist.`}
+        action={
+          <Link to="/app/runs">
+            <Button variant="secondary" size="sm" leftIcon={<ArrowLeft className="w-4 h-4" />}>
+              Back to Runs
+            </Button>
+          </Link>
+        }
       />
     );
   }
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Top back navigation */}
-      <div>
-        <Link
-          to="/runs"
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900 dark:hover:text-white mb-2 transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
-          Back to runs list
-        </Link>
+    <div className="space-y-6 animate-fade-in pb-12">
+      {/* Back button & Title */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border-subtle">
+        <div className="flex items-center gap-3">
+          <Link to="/app/runs">
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<ArrowLeft className="w-4 h-4" />}
+            >
+              Back to Runs
+            </Button>
+          </Link>
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
-              Run #{run.runNumber}
-            </h1>
-            <StatusBadge status={run.status} />
-          </div>
-
-          <div className="flex items-center gap-4 text-xs font-mono text-slate-500">
-            <span className="flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5" aria-hidden="true" />
-              Duration: {run.durationFormatted}
-            </span>
-            <span>Started: {run.startedAt}</span>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-heading font-extrabold text-content-primary tracking-tight">
+                Run #{run.runNumber}
+              </h1>
+              <Badge
+                variant={run.status === 'success' ? 'success' : run.status === 'failed' ? 'danger' : 'brand'}
+                size="sm"
+                dot
+              >
+                {run.status.toUpperCase()}
+              </Badge>
+            </div>
+            <p className="text-xs text-content-secondary line-clamp-1 mt-0.5">
+              {run.commitMessage}
+            </p>
           </div>
         </div>
-
-        <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mt-1">
-          {run.commitMessage}
-        </p>
       </div>
 
-      {/* Metadata Panel */}
-      <section aria-labelledby="run-metadata-title" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm">
-        <h2 id="run-metadata-title" className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-4">
-          Pipeline Execution Metadata
-        </h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-y-4 gap-x-6 text-xs font-mono">
-          {/* Commit & Author */}
-          <div className="space-y-1">
-            <span className="text-slate-400 text-[11px] block">Commit SHA & Author</span>
-            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/80 p-2 rounded-lg border border-slate-200/60 dark:border-slate-700">
-              <span className="text-slate-900 dark:text-white font-semibold">
-                {formatSha(run.commitSha, 10)} ({run.author})
-              </span>
-              <button
-                onClick={() => copyToClipboard(run.commitSha, 'sha')}
-                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-0.5 rounded"
-                aria-label="Copy full commit SHA"
-              >
-                {copiedKey === 'sha' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
-            </div>
+      {/* Metadata Overview Card */}
+      <Card className="p-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 text-xs">
+          <div>
+            <span className="text-content-muted block uppercase tracking-wider text-[10px] font-semibold">
+              Commit SHA
+            </span>
+            <button
+              type="button"
+              onClick={() => copyToClipboard(run.commitSha, 'sha')}
+              className="mt-1 font-mono font-medium text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1"
+            >
+              <span>{formatSha(run.commitSha)}</span>
+              {copiedKey === 'sha' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 opacity-60" />}
+            </button>
           </div>
 
-          {/* Branch & Trigger */}
-          <div className="space-y-1">
-            <span className="text-slate-400 text-[11px] block">Branch & Trigger</span>
-            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/80 p-2 rounded-lg border border-slate-200/60 dark:border-slate-700">
-              <span className="text-slate-900 dark:text-white font-medium flex items-center gap-1.5">
-                <GitBranch className="w-3.5 h-3.5 text-slate-400" />
-                {run.branch}
-              </span>
-              <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-sans font-medium capitalize">
-                {run.trigger.replace('_', ' ')}
-              </span>
-            </div>
+          <div>
+            <span className="text-content-muted block uppercase tracking-wider text-[10px] font-semibold">
+              Branch
+            </span>
+            <span className="mt-1 inline-flex items-center gap-1 font-mono text-content-primary">
+              <GitBranch className="w-3.5 h-3.5 text-brand-500" />
+              {run.branch}
+            </span>
           </div>
 
-          {/* Image Tag */}
-          <div className="space-y-1">
-            <span className="text-slate-400 text-[11px] block">Docker Image Tag</span>
-            <div className="bg-slate-50 dark:bg-slate-800/80 p-2 rounded-lg border border-slate-200/60 dark:border-slate-700 text-slate-900 dark:text-white truncate">
-              {run.imageTag || <span className="text-slate-400 italic">None (no image created)</span>}
-            </div>
+          <div>
+            <span className="text-content-muted block uppercase tracking-wider text-[10px] font-semibold">
+              Trigger
+            </span>
+            <span className="mt-1 inline-flex items-center gap-1 text-content-primary">
+              <GitPullRequest className="w-3.5 h-3.5 text-purple-500" />
+              {run.trigger}
+            </span>
           </div>
 
-          {/* AWS ECR URI */}
-          <div className="space-y-1 sm:col-span-2 lg:col-span-2">
-            <span className="text-slate-400 text-[11px] block">AWS ECR Registry URI</span>
-            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/80 p-2 rounded-lg border border-slate-200/60 dark:border-slate-700">
-              <span className="text-slate-800 dark:text-slate-200 truncate">
-                {run.ecrUri || <span className="text-slate-400 italic">Push step skipped</span>}
-              </span>
-              {run.ecrUri && (
-                <button
-                  onClick={() => copyToClipboard(run.ecrUri, 'ecr')}
-                  className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-0.5 rounded shrink-0 ml-2"
-                  aria-label="Copy ECR URI"
-                >
-                  {copiedKey === 'ecr' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                </button>
-              )}
-            </div>
+          <div>
+            <span className="text-content-muted block uppercase tracking-wider text-[10px] font-semibold">
+              Duration
+            </span>
+            <span className="mt-1 font-mono text-content-primary">
+              {run.durationFormatted}
+            </span>
           </div>
 
-          {/* Deployment Host */}
-          <div className="space-y-1">
-            <span className="text-slate-400 text-[11px] block">Target EC2 Host</span>
-            <div className="bg-slate-50 dark:bg-slate-800/80 p-2 rounded-lg border border-slate-200/60 dark:border-slate-700 text-slate-900 dark:text-white truncate">
-              {run.ec2Host}
-            </div>
+          <div>
+            <span className="text-content-muted block uppercase tracking-wider text-[10px] font-semibold">
+              Author
+            </span>
+            <span className="mt-1 text-content-primary font-medium">
+              {run.author}
+            </span>
+          </div>
+
+          <div>
+            <span className="text-content-muted block uppercase tracking-wider text-[10px] font-semibold">
+              Image Tag
+            </span>
+            <span className="mt-1 font-mono text-emerald-600 dark:text-emerald-400">
+              {run.imageTag || '—'}
+            </span>
           </div>
         </div>
-      </section>
+      </Card>
 
-      {/* 4-Stage Horizontal Pipeline Stepper and Logs */}
-      <section aria-labelledby="pipeline-stages-title" className="space-y-4">
-        <h2 id="pipeline-stages-title" className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-          Pipeline Stages &amp; Execution Trace
-        </h2>
-
-        <PipelineStepper stages={run.stages} />
-      </section>
+      {/* Stepper and Terminal Logs */}
+      <PipelineStepper stages={run.stages || []} />
     </div>
   );
 }

@@ -2,7 +2,7 @@ import logging
 from flask import Flask, request, jsonify, g
 from werkzeug.exceptions import HTTPException
 from .config import Config, load_config
-from .db import init_db, seed_database, get_db, close_db
+from .db import init_db, seed_database, get_db, close_db, db_execute, db_fetchone
 from .security import decode_auth_token, verify_api_key_constant_time
 from .auth import PUBLIC_ENDPOINTS, get_minimum_role_for_endpoint, has_required_role
 from .services.factory import create_provider
@@ -88,15 +88,16 @@ def create_app(overrides: dict | None = None) -> Flask:
 
         # Reload user from DB on each request to verify status and fresh role
         conn = get_db()
-        user_row = conn.execute(
+        user_row = db_fetchone(
+            conn,
             "SELECT id, username, full_name, role, is_active, token_version FROM users WHERE id = ?",
             (token_data["uid"],),
-        ).fetchone()
+        )
 
         if not user_row or user_row["is_active"] != 1 or user_row["token_version"] != token_data["tv"]:
             return jsonify({"error": "Session is invalid or has expired"}), 401
 
-        g.current_user = dict(user_row)
+        g.current_user = user_row
 
         # Enforce role-based access control (default minimum role is viewer)
         required_role = get_minimum_role_for_endpoint(request.endpoint)

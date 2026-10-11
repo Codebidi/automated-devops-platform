@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, current_app, g
-from ..db import get_db
+from ..db import get_db, db_execute, db_fetchone
 from ..security import (
     check_password_safely,
     generate_auth_token,
@@ -28,11 +28,12 @@ def login():
         return jsonify({"error": "Too many failed login attempts. Please try again in 15 minutes."}), 429
 
     conn = get_db()
-    user_row = conn.execute(
+    user_row = db_fetchone(
+        conn,
         "SELECT id, username, full_name, password_hash, role, is_active, token_version, created_at, last_login_at "
-        "FROM users WHERE username = ? COLLATE NOCASE",
+        "FROM users WHERE lower(username) = lower(?)",
         (username,),
-    ).fetchone()
+    )
 
     password_hash = user_row["password_hash"] if user_row else None
     is_valid_pw = check_password_safely(password, password_hash)
@@ -48,7 +49,7 @@ def login():
     reset_login_throttle(username, client_ip)
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    conn.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (now_iso, user_row["id"]))
+    db_execute(conn, "UPDATE users SET last_login_at = ? WHERE id = ?", (now_iso, user_row["id"]))
     conn.commit()
 
     token = generate_auth_token(user_row["id"], user_row["token_version"], cfg.secret_key)

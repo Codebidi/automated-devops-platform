@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, current_app
-from ..db import get_db
+from ..db import get_db, db_fetchone
 
 stats_bp = Blueprint("stats", __name__, url_prefix="/api")
 
@@ -18,14 +18,14 @@ def get_stats():
     avg_duration = round(sum(r["duration_seconds"] for r in completed) / len(completed), 1) if completed else 0
 
     conn = get_db()
-    current_dep_row = conn.execute(
-        "SELECT * FROM deployments WHERE is_current = 1 ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    current_deployment = dict(current_dep_row) if current_dep_row else None
-
-    last_dep_row = conn.execute(
-        "SELECT deployed_at FROM deployments ORDER BY id DESC LIMIT 1"
-    ).fetchone()
+    current_dep_row = db_fetchone(
+        conn,
+        "SELECT * FROM deployments WHERE is_current = 1 ORDER BY id DESC LIMIT 1",
+    )
+    last_dep_row = db_fetchone(
+        conn,
+        "SELECT deployed_at FROM deployments ORDER BY id DESC LIMIT 1",
+    )
     last_deployment_at = last_dep_row["deployed_at"] if last_dep_row else None
 
     # Last 20 runs, reversed to oldest-to-newest for charts
@@ -47,6 +47,6 @@ def get_stats():
         "success_rate": success_rate,
         "avg_duration_seconds": avg_duration,
         "last_deployment_at": last_deployment_at,
-        "current_deployment": current_deployment,
+        "current_deployment": current_dep_row,
         "recent": recent,
     }), 200

@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { CheckCircle2, XCircle, Loader2, MinusCircle, ChevronRight } from 'lucide-react';
 import LogViewer from './LogViewer';
-import StatusBadge from './StatusBadge';
+import { Badge } from './ui';
 
 export default function PipelineStepper({ stages = [] }) {
   const [selectedStageIndex, setSelectedStageIndex] = useState(() => {
-    // Default open failing or running stage, or first stage
     const failIdx = stages.findIndex(s => s.status === 'failed');
     if (failIdx !== -1) return failIdx;
     const runIdx = stages.findIndex(s => s.status === 'running');
@@ -16,14 +15,13 @@ export default function PipelineStepper({ stages = [] }) {
   const getStepIcon = (status) => {
     switch (status) {
       case 'success':
-        return <CheckCircle2 className="w-5 h-5 text-emerald-500" aria-hidden="true" />;
+        return <CheckCircle2 className="w-5 h-5 text-emerald-500" />;
       case 'failed':
-        return <XCircle className="w-5 h-5 text-rose-500" aria-hidden="true" />;
+        return <XCircle className="w-5 h-5 text-rose-500" />;
       case 'running':
-        return <Loader2 className="w-5 h-5 text-sky-500 animate-spin" aria-hidden="true" />;
-      case 'skipped':
+        return <Loader2 className="w-5 h-5 text-brand-500 animate-spin" />;
       default:
-        return <MinusCircle className="w-5 h-5 text-slate-400" aria-hidden="true" />;
+        return <MinusCircle className="w-5 h-5 text-content-muted" />;
     }
   };
 
@@ -44,40 +42,31 @@ export default function PipelineStepper({ stages = [] }) {
                 <button
                   type="button"
                   onClick={() => setSelectedStageIndex(idx)}
-                  className={`w-full text-left p-3.5 rounded-xl border transition-all flex flex-col justify-between h-full relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${
+                  className={`w-full text-left p-4 rounded-2xl border transition-all flex flex-col justify-between h-full relative focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                     isSelected
-                      ? 'border-sky-500 bg-sky-50/50 dark:bg-sky-950/30 ring-1 ring-sky-500'
+                      ? 'border-brand-500 bg-brand-50/50 dark:bg-brand-950/30 shadow-glow-brand ring-1 ring-brand-500'
                       : isFailed
-                      ? 'border-rose-300 dark:border-rose-900 bg-rose-50/30 dark:bg-rose-950/10 hover:border-rose-400'
-                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
+                      ? 'border-rose-300 dark:border-rose-900 bg-rose-50/20 dark:bg-rose-950/20'
+                      : 'border-border-subtle bg-surface dark:bg-surface-elevated hover:border-border-strong'
                   }`}
                   aria-current={isSelected ? 'step' : undefined}
                 >
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono font-semibold text-slate-400">
+                      <span className="text-xs font-mono font-bold text-content-muted">
                         0{idx + 1}
                       </span>
-                      {getStepIcon(stage.status)}
+                      <span className="font-heading font-semibold text-xs text-content-primary">
+                        {stage.name}
+                      </span>
                     </div>
-                    <StatusBadge status={stage.status} size="sm" />
+                    {getStepIcon(stage.status)}
                   </div>
 
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white line-clamp-1">
-                      {stage.name}
-                    </h3>
-                    <p className="text-xs font-mono text-slate-500 dark:text-slate-400 mt-0.5">
-                      {isRunning ? 'Running...' : stage.duration || '—'}
-                    </p>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-border-subtle text-[11px] text-content-secondary font-mono">
+                    <span>{stage.duration || '—'}</span>
+                    <span className="capitalize">{stage.status}</span>
                   </div>
-
-                  {isSelected && (
-                    <div
-                      className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-sky-500 rotate-45 rounded-sm hidden lg:block"
-                      aria-hidden="true"
-                    />
-                  )}
                 </button>
               </li>
             );
@@ -85,22 +74,21 @@ export default function PipelineStepper({ stages = [] }) {
         </ol>
       </nav>
 
-      {/* Stage Detail & Collapsible Log Viewer */}
+      {/* Selected Stage Log Viewer */}
       {activeStage && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 px-1">
-            <span className="font-medium">
-              Viewing logs for <span className="font-semibold text-slate-900 dark:text-white">{activeStage.name}</span>
-            </span>
-            <span className="font-mono">
-              Stage Duration: {activeStage.duration}
-            </span>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-heading font-bold text-content-primary">
+              Output: {activeStage.name}
+            </h3>
+            <Badge variant={activeStage.status === 'success' ? 'success' : activeStage.status === 'failed' ? 'danger' : 'brand'} size="sm">
+              {activeStage.status.toUpperCase()}
+            </Badge>
           </div>
 
           <LogViewer
-            key={activeStage.id}
+            logs={Array.isArray(activeStage.logs) ? activeStage.logs.join('\n') : String(activeStage.logs || '')}
             stageName={activeStage.name}
-            logs={activeStage.logs}
             defaultExpanded={true}
           />
         </div>

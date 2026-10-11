@@ -1,124 +1,176 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { GitCommit, GitPullRequest, GitBranch, ArrowRight, Clock } from 'lucide-react';
-import StatusBadge from './StatusBadge';
+import {
+  GitCommit,
+  GitPullRequest,
+  GitBranch,
+  ArrowRight,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  Loader2,
+} from 'lucide-react';
+import { Badge, EmptyState } from './ui';
 import { formatSha } from '../utils/formatters';
 
 export default function RunsTable({ runs = [], compact = false }) {
   if (!runs || runs.length === 0) {
     return (
-      <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">
-        No pipeline runs match the criteria.
-      </div>
+      <EmptyState
+        title="No Pipeline Runs"
+        description="No pipeline execution matches the specified filter or criteria."
+      />
     );
   }
 
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'success':
+        return (
+          <Badge
+            variant="success"
+            size="sm"
+            icon={<CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />}
+          >
+            Success
+          </Badge>
+        );
+      case 'failed':
+        return (
+          <Badge
+            variant="danger"
+            size="sm"
+            icon={<XCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />}
+          >
+            Failed
+          </Badge>
+        );
+      case 'running':
+        return (
+          <Badge
+            variant="brand"
+            size="sm"
+            icon={<Loader2 className="w-3.5 h-3.5 animate-spin text-brand-600 dark:text-brand-400" />}
+          >
+            Running
+          </Badge>
+        );
+      default:
+        return (
+          <Badge
+            variant="warning"
+            size="sm"
+            icon={<AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />}
+          >
+            {status || 'Unknown'}
+          </Badge>
+        );
+    }
+  };
+
   return (
-    <div className="w-full overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
+    <div className="w-full overflow-x-auto rounded-2xl border border-border-subtle bg-surface dark:bg-surface-elevated shadow-card">
       <table className="w-full text-left border-collapse text-xs">
-        <thead>
-          <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-            <th scope="col" className="py-3 px-4">Run #</th>
-            <th scope="col" className="py-3 px-4">Commit</th>
-            <th scope="col" className="py-3 px-4">Branch</th>
-            <th scope="col" className="py-3 px-4">Trigger</th>
-            <th scope="col" className="py-3 px-4">Status</th>
-            <th scope="col" className="py-3 px-4">Duration</th>
-            <th scope="col" className="py-3 px-4">Started</th>
-            <th scope="col" className="py-3 px-4 text-right">Details</th>
+        <thead className="sticky top-0 z-10">
+          <tr className="border-b border-border-subtle bg-surface-subtle/80 dark:bg-surface-subtle/40 backdrop-blur-sm text-content-secondary font-semibold uppercase tracking-wider text-[11px]">
+            <th scope="col" className="py-3.5 px-4">Run</th>
+            <th scope="col" className="py-3.5 px-4">Commit</th>
+            <th scope="col" className="py-3.5 px-4">Branch</th>
+            <th scope="col" className="py-3.5 px-4">Trigger</th>
+            <th scope="col" className="py-3.5 px-4">Status</th>
+            <th scope="col" className="py-3.5 px-4">Duration</th>
+            <th scope="col" className="py-3.5 px-4">Started</th>
+            <th scope="col" className="py-3.5 px-4 text-right">Details</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+        <tbody className="divide-y divide-border-subtle">
           {runs.map((run) => {
             const isPr = run.trigger === 'pull_request';
 
             return (
               <tr
                 key={run.id}
-                className="group hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                className="group hover:bg-surface-subtle/50 transition-colors"
               >
-                {/* Run # */}
-                <td className="py-3 px-4 font-mono font-medium text-slate-900 dark:text-white whitespace-nowrap">
+                {/* Run Number */}
+                <td className="py-3.5 px-4 font-mono font-bold text-content-primary whitespace-nowrap">
                   <Link
-                    to={`/runs/${run.id}`}
-                    className="hover:text-sky-600 dark:hover:text-sky-400 focus-visible:outline-none focus-visible:underline"
+                    to={`/app/runs/${run.id}`}
+                    className="hover:text-brand-500 transition-colors"
                   >
                     #{run.runNumber}
                   </Link>
                 </td>
 
-                {/* Commit SHA & Message */}
-                <td className="py-3 px-4 max-w-xs md:max-w-md">
+                {/* Commit Message & SHA */}
+                <td className="py-3.5 px-4 max-w-xs md:max-w-md">
                   <div className="flex flex-col">
-                    <span className="font-medium text-slate-800 dark:text-slate-200 line-clamp-1 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors">
+                    <Link
+                      to={`/app/runs/${run.id}`}
+                      className="font-medium text-content-primary line-clamp-1 group-hover:text-brand-500 transition-colors"
+                    >
                       {run.commitMessage}
-                    </span>
-                    <div className="flex items-center gap-2 mt-0.5 text-slate-400 font-mono text-[11px]">
+                    </Link>
+                    <div className="flex items-center gap-2 mt-1 text-content-muted font-mono text-[11px]">
                       <span className="flex items-center gap-1">
-                        <GitCommit className="w-3 h-3 text-slate-400" aria-hidden="true" />
+                        <GitCommit className="w-3 h-3 text-content-muted" />
                         {formatSha(run.commitSha)}
                       </span>
-                      <span>&bull;</span>
+                      <span>•</span>
                       <span>{run.author}</span>
                     </div>
                   </div>
                 </td>
 
                 {/* Branch */}
-                <td className="py-3 px-4 whitespace-nowrap">
-                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[11px]">
-                    <GitBranch className="w-3 h-3 text-slate-400" aria-hidden="true" />
+                <td className="py-3.5 px-4 whitespace-nowrap">
+                  <span className="inline-flex items-center gap-1 font-mono text-[11px] px-2 py-0.5 rounded-md bg-surface-subtle text-content-secondary border border-border-subtle">
+                    <GitBranch className="w-3 h-3 text-brand-500" />
                     {run.branch}
                   </span>
                 </td>
 
                 {/* Trigger */}
-                <td className="py-3 px-4 whitespace-nowrap">
-                  {isPr ? (
-                    <div className="flex flex-col items-start gap-0.5">
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded">
-                        <GitPullRequest className="w-3 h-3" aria-hidden="true" />
-                        PR #{run.prNumber || ''}
-                      </span>
-                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
-                        Tests only, no deploy
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
-                      <GitCommit className="w-3 h-3" aria-hidden="true" />
-                      Push
-                    </span>
-                  )}
-                </td>
-
-                {/* Status */}
-                <td className="py-3 px-4 whitespace-nowrap">
-                  <StatusBadge status={run.status} size="sm" />
-                </td>
-
-                {/* Duration */}
-                <td className="py-3 px-4 whitespace-nowrap font-mono text-slate-600 dark:text-slate-400">
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-slate-400" aria-hidden="true" />
-                    {run.durationFormatted}
+                <td className="py-3.5 px-4 whitespace-nowrap">
+                  <span className="inline-flex items-center gap-1 text-[11px] text-content-secondary">
+                    {isPr ? (
+                      <>
+                        <GitPullRequest className="w-3 h-3 text-purple-500" />
+                        Pull Request
+                      </>
+                    ) : (
+                      <>
+                        <GitCommit className="w-3 h-3 text-brand-500" />
+                        Push
+                      </>
+                    )}
                   </span>
                 </td>
 
-                {/* Started */}
-                <td className="py-3 px-4 whitespace-nowrap text-slate-500 dark:text-slate-400">
-                  {run.startedAt}
+                {/* Status with icon and text */}
+                <td className="py-3.5 px-4 whitespace-nowrap">
+                  {getStatusBadge(run.status)}
                 </td>
 
-                {/* Details link */}
-                <td className="py-3 px-4 text-right whitespace-nowrap">
+                {/* Duration */}
+                <td className="py-3.5 px-4 font-mono text-content-secondary whitespace-nowrap">
+                  {run.durationFormatted}
+                </td>
+
+                {/* Started Timestamp */}
+                <td className="py-3.5 px-4 text-content-muted font-mono whitespace-nowrap text-[11px]">
+                  {run.startedAt ? new Date(run.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                </td>
+
+                {/* Action Link */}
+                <td className="py-3.5 px-4 text-right whitespace-nowrap">
                   <Link
-                    to={`/runs/${run.id}`}
-                    className="inline-flex items-center gap-1 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 rounded p-1"
-                    aria-label={`View details for run #${run.runNumber}`}
+                    to={`/app/runs/${run.id}`}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 transition-colors"
                   >
-                    <span className="sr-only">Details</span>
-                    <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                    <span>View</span>
+                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                   </Link>
                 </td>
               </tr>

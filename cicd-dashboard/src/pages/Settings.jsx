@@ -1,28 +1,41 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Server, Cloud, CheckCircle2,
-  Copy, Check, ExternalLink, Edit3, Save
+  Server,
+  Cloud,
+  CheckCircle2,
+  Copy,
+  Check,
+  ExternalLink,
+  Edit3,
+  Save,
+  Shield,
+  Key,
 } from 'lucide-react';
-import LoadingSkeleton from '../components/LoadingSkeleton';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import SecretsChecklist from '../components/SecretsChecklist';
+import { Button, Card, Input, Badge, Skeleton } from '../components/ui';
 import { fetchPlatformConfig, updatePlatformConfig } from '../api/pipelineApi';
 
 export default function Settings({ onRepoChange }) {
+  const { isAdmin } = useAuth();
+  const toast = useToast();
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [copiedKey, setCopiedKey] = useState(null);
   const [isEditingRepo, setIsEditingRepo] = useState(false);
   const [repoInput, setRepoInput] = useState('');
-  const [saveBanner, setSaveBanner] = useState(null);
 
   useEffect(() => {
     async function load() {
       try {
+        setLoading(true);
         const data = await fetchPlatformConfig();
         setConfig(data);
         setRepoInput(data.repoName);
       } catch (err) {
-        console.error("Failed to load settings", err);
+        console.error('Failed to load settings', err);
+        toast.error('Failed to load settings configuration.');
       } finally {
         setLoading(false);
       }
@@ -33,6 +46,7 @@ export default function Settings({ onRepoChange }) {
   const copyText = (val, key) => {
     navigator.clipboard?.writeText(val);
     setCopiedKey(key);
+    toast.success('Copied to clipboard');
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
@@ -40,148 +54,183 @@ export default function Settings({ onRepoChange }) {
     e.preventDefault();
     const cleanRepo = repoInput.trim();
     if (!cleanRepo) return;
-    const updated = await updatePlatformConfig({ repoName: cleanRepo });
-    setConfig(updated);
-    setIsEditingRepo(false);
-    if (onRepoChange) onRepoChange(cleanRepo);
-    setSaveBanner(`Repository updated to "${cleanRepo}"`);
-    setTimeout(() => setSaveBanner(null), 4000);
+    try {
+      const updated = await updatePlatformConfig({ repoName: cleanRepo });
+      setConfig(updated);
+      setIsEditingRepo(false);
+      if (onRepoChange) onRepoChange(cleanRepo);
+      toast.success(`Repository configuration saved: "${cleanRepo}"`);
+    } catch {
+      toast.error('Failed to save repository configuration.');
+    }
   };
+
+  if (!isAdmin) {
+    return (
+      <Card className="p-8 text-center max-w-lg mx-auto mt-12">
+        <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60 flex items-center justify-center mx-auto mb-4">
+          <Shield className="w-6 h-6" />
+        </div>
+        <h2 className="text-lg font-heading font-bold text-content-primary">
+          Administrator Privilege Required
+        </h2>
+        <p className="mt-2 text-xs text-content-secondary leading-relaxed">
+          System settings and secrets verification are strictly limited to users with the Administrator role.
+        </p>
+      </Card>
+    );
+  }
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <LoadingSkeleton variant="card" count={2} />
-        <LoadingSkeleton variant="table" count={5} />
+      <div className="space-y-6 animate-fade-in">
+        <Skeleton variant="card" count={2} />
+        <Skeleton variant="card" count={2} />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 animate-fade-in pb-12">
+      {/* Header */}
       <div>
-        <h1 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
-          Platform Configuration &amp; Secrets
+        <h1 className="text-2xl font-heading font-extrabold text-content-primary tracking-tight">
+          System Settings & Infrastructure
         </h1>
-        <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          System parameters, cloud targets, and GitHub Actions secrets audit.
+        <p className="mt-1 text-xs sm:text-sm text-content-secondary">
+          Configure connected GitHub repositories, AWS host endpoints, and verify secret checklist.
         </p>
       </div>
 
-      {saveBanner && (
-        <div className="p-3 rounded-lg bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          <span>{saveBanner}</span>
-        </div>
-      )}
+      {/* Repository Settings Card */}
+      <Card className="p-6">
+        <h2 className="text-base font-heading font-bold text-content-primary mb-1">
+          Connected GitHub Repository
+        </h2>
+        <p className="text-xs text-content-secondary mb-4">
+          Target repository for webhook ingestion and deployment trigger matching.
+        </p>
 
-      {/* Infrastructure Target Card */}
-      <section aria-labelledby="infra-config-heading" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm">
-        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
-          <Server className="w-4 h-4 text-sky-500" aria-hidden="true" />
-          <h2 id="infra-config-heading" className="text-sm font-semibold text-slate-900 dark:text-white">
-            Infrastructure Target Specifications
+        {isEditingRepo ? (
+          <form onSubmit={handleSaveRepo} className="flex flex-col sm:flex-row gap-3 max-w-md">
+            <Input
+              value={repoInput}
+              onChange={(e) => setRepoInput(e.target.value)}
+              placeholder="e.g. org/repo-name"
+              required
+            />
+            <div className="flex items-center gap-2">
+              <Button type="submit" variant="primary" size="md" leftIcon={<Save className="w-4 h-4" />}>
+                Save
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                onClick={() => {
+                  setIsEditingRepo(false);
+                  setRepoInput(config?.repoName || '');
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-surface-subtle border border-border-subtle">
+            <div>
+              <span className="font-mono text-sm font-bold text-content-primary">
+                {config?.repoName}
+              </span>
+              <a
+                href={config?.repoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="ml-3 inline-flex items-center gap-1 text-xs text-brand-600 dark:text-brand-400 hover:underline"
+              >
+                View on GitHub
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsEditingRepo(true)}
+              leftIcon={<Edit3 className="w-3.5 h-3.5" />}
+            >
+              Change Repository
+            </Button>
+          </div>
+        )}
+      </Card>
+
+      {/* Cloud & Cluster Endpoints Card */}
+      <Card className="p-6">
+        <div className="flex items-center gap-2.5 mb-1">
+          <Cloud className="w-5 h-5 text-brand-500" />
+          <h2 className="text-base font-heading font-bold text-content-primary">
+            Cloud Host & Registry Endpoints
           </h2>
         </div>
+        <p className="text-xs text-content-secondary mb-4">
+          Verified AWS EC2 and ECR container endpoints managed by the deployment driver.
+        </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
-          {/* GitHub Repository Item */}
-          <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 md:col-span-2">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-slate-400 text-[11px] font-sans">GitHub Repository</span>
-              {!isEditingRepo ? (
-                <button
-                  type="button"
-                  onClick={() => setIsEditingRepo(true)}
-                  className="inline-flex items-center gap-1 text-[11px] font-sans text-sky-600 dark:text-sky-400 hover:underline"
-                >
-                  <Edit3 className="w-3 h-3" /> Change Repository
-                </button>
-              ) : null}
-            </div>
-
-            {isEditingRepo ? (
-              <form onSubmit={handleSaveRepo} className="flex flex-wrap items-center gap-2 mt-2">
-                <input
-                  type="text"
-                  value={repoInput}
-                  onChange={(e) => setRepoInput(e.target.value)}
-                  placeholder="e.g. codebidi/ai-devops-platform or codebidi"
-                  className="px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white flex-1 min-w-[200px]"
-                />
-                <button
-                  type="submit"
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg text-white bg-sky-600 hover:bg-sky-500"
-                >
-                  <Save className="w-3.5 h-3.5" /> Save
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setIsEditingRepo(false); setRepoInput(config.repoName); }}
-                  className="px-2.5 py-1.5 text-xs rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-              </form>
-            ) : (
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-slate-900 dark:text-white text-sm">{config.repoName}</span>
-                <a
-                  href={config.repoUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-slate-400 hover:text-sky-500 p-1 flex items-center gap-1 text-[11px] font-sans"
-                >
-                  <span>View on GitHub</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              </div>
-            )}
-          </div>
-
-          {/* Region */}
-          <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
-            <span className="text-slate-400 text-[11px] font-sans block mb-1">AWS Region</span>
-            <div className="flex items-center gap-2">
-              <Cloud className="w-3.5 h-3.5 text-sky-500" aria-hidden="true" />
-              <span className="font-semibold text-slate-900 dark:text-white">{config.awsRegion}</span>
-            </div>
-          </div>
-
-          {/* EC2 Host */}
-          <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
-            <span className="text-slate-400 text-[11px] font-sans block mb-1">AWS EC2 Production Host</span>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-slate-900 dark:text-white truncate">{config.ec2Host}</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-4 rounded-xl bg-surface-subtle border border-border-subtle">
+            <span className="text-[10px] font-mono font-bold uppercase text-content-muted block mb-1">
+              AWS EC2 Host Target
+            </span>
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs text-content-primary truncate">
+                {config?.ec2Host}
+              </span>
               <button
-                onClick={() => copyText(config.ec2Host, 'ec2')}
-                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1"
-                aria-label="Copy EC2 host address"
+                type="button"
+                onClick={() => copyText(config?.ec2Host, 'ec2')}
+                className="p-1 hover:text-brand-500 text-content-muted"
+                title="Copy host"
               >
-                {copiedKey === 'ec2' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedKey === 'ec2' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
           </div>
 
-          {/* ECR Repo */}
-          <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 md:col-span-2">
-            <span className="text-slate-400 text-[11px] font-sans block mb-1">Amazon ECR Container Registry</span>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-slate-900 dark:text-white truncate">{config.ecrRepo}</span>
+          <div className="p-4 rounded-xl bg-surface-subtle border border-border-subtle">
+            <span className="text-[10px] font-mono font-bold uppercase text-content-muted block mb-1">
+              AWS ECR Registry URI
+            </span>
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs text-content-primary truncate">
+                {config?.ecrRepo}
+              </span>
               <button
-                onClick={() => copyText(config.ecrRepo, 'ecr')}
-                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1"
-                aria-label="Copy ECR URI"
+                type="button"
+                onClick={() => copyText(config?.ecrRepo, 'ecr')}
+                className="p-1 hover:text-brand-500 text-content-muted"
+                title="Copy ECR URI"
               >
-                {copiedKey === 'ecr' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedKey === 'ecr' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
           </div>
         </div>
-      </section>
+      </Card>
 
-      {/* GitHub Secrets Checklist */}
-      <SecretsChecklist secrets={config.secrets} />
+      {/* Secrets Checklist Card */}
+      <Card className="p-6">
+        <div className="flex items-center gap-2.5 mb-1">
+          <Key className="w-5 h-5 text-brand-500" />
+          <h2 className="text-base font-heading font-bold text-content-primary">
+            Required Environment Secrets Checklist
+          </h2>
+        </div>
+        <p className="text-xs text-content-secondary mb-4">
+          Health status of signing keys, database passwords, and GitHub credentials.
+        </p>
+        <SecretsChecklist secrets={config?.secrets || []} />
+      </Card>
     </div>
   );
 }

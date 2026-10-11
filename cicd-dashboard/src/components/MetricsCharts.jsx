@@ -1,84 +1,137 @@
 import React from 'react';
-import { BarChart3 } from 'lucide-react';
+import { BarChart3, TrendingUp } from 'lucide-react';
 import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
-  Tooltip, BarChart, Bar, Cell
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  BarChart,
+  Bar,
+  Cell,
 } from 'recharts';
+import { Card } from './ui';
+
+function CustomTooltip({ active, payload, label }) {
+  if (active && payload && payload.length) {
+    const data = payload[0];
+    return (
+      <div className="p-3 rounded-xl bg-slate-950/95 text-white border border-slate-800 shadow-elevated backdrop-blur-md text-xs font-mono">
+        <p className="font-heading font-bold text-slate-300 mb-1">{label}</p>
+        <p className="text-brand-300 font-medium">
+          Duration:{' '}
+          <span className="text-white font-bold">{data.value}s</span>
+        </p>
+      </div>
+    );
+  }
+  return null;
+}
 
 export default function MetricsCharts({ data = [] }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Duration Time Series */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm">
+      <Card className="p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-              Pipeline Duration Trend
+            <h3 className="text-sm font-heading font-bold text-content-primary">
+              Pipeline Duration Velocity
             </h3>
-            <p className="text-xs text-slate-500">Last 20 runs (duration in seconds)</p>
+            <p className="text-xs text-content-secondary">
+              Execution duration trend across recent pipeline runs (seconds)
+            </p>
           </div>
-          <BarChart3 className="w-4 h-4 text-slate-400" aria-hidden="true" />
+          <div className="w-8 h-8 rounded-xl bg-surface-subtle border border-border-subtle flex items-center justify-center text-brand-500">
+            <TrendingUp className="w-4 h-4" />
+          </div>
         </div>
-        <div className="h-52 w-full">
+
+        <div className="h-56 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data}>
+            <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
-                <linearGradient id="durationGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#0284c7" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#0284c7" stopOpacity={0} />
+                <linearGradient id="durationBrandGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.45} />
+                  <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} stroke="#cbd5e1" />
-              <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} stroke="#cbd5e1" unit="s" />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
-                formatter={(val) => [`${val}s`, 'Duration']}
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 10, fill: '#94a3b8' }}
+                stroke="transparent"
               />
-              <Area type="monotone" dataKey="duration" stroke="#0284c7" strokeWidth={2} fillOpacity={1} fill="url(#durationGrad)" />
+              <YAxis
+                tick={{ fontSize: 10, fill: '#94a3b8' }}
+                stroke="transparent"
+                unit="s"
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Area
+                type="monotone"
+                dataKey="duration"
+                stroke="#6366f1"
+                strokeWidth={2.5}
+                fillOpacity={1}
+                fill="url(#durationBrandGrad)"
+              />
             </AreaChart>
           </ResponsiveContainer>
         </div>
-      </div>
+      </Card>
 
-      {/* Pass / Fail Outcome Chart */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm">
+      {/* Outcome Distribution Bar Chart */}
+      <Card className="p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-              Recent Run Statuses
+            <h3 className="text-sm font-heading font-bold text-content-primary">
+              Run Status Distribution
             </h3>
-            <p className="text-xs text-slate-500">Green = Success, Red = Failed, Blue = Running</p>
+            <p className="text-xs text-content-secondary">
+              Pass / Fail outcome per pipeline run
+            </p>
           </div>
-          <div className="flex items-center gap-3 text-xs">
-            <span className="flex items-center gap-1 text-slate-500">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Pass
+          <div className="flex items-center gap-3 text-xs font-medium">
+            <span className="flex items-center gap-1.5 text-content-secondary">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Success
             </span>
-            <span className="flex items-center gap-1 text-slate-500">
-              <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" /> Fail
+            <span className="flex items-center gap-1.5 text-content-secondary">
+              <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" /> Failed
             </span>
           </div>
         </div>
-        <div className="h-52 w-full">
+
+        <div className="h-56 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data}>
-              <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} stroke="#cbd5e1" />
-              <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} stroke="#cbd5e1" unit="s" />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
-                formatter={(val, name, item) => [`${val}s (${item.payload.status})`, 'Duration']}
+            <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 10, fill: '#94a3b8' }}
+                stroke="transparent"
               />
-              <Bar dataKey="duration" radius={[4, 4, 0, 0]}>
-                {data.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={entry.status === 'success' ? '#10b981' : entry.status === 'failed' ? '#f43f5e' : '#0284c7'}
-                  />
-                ))}
+              <YAxis
+                tick={{ fontSize: 10, fill: '#94a3b8' }}
+                stroke="transparent"
+                unit="s"
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="duration" radius={[6, 6, 0, 0]}>
+                {data.map((entry, index) => {
+                  const isSuccess = entry.status === 'success';
+                  const isRunning = entry.status === 'running';
+                  return (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={isSuccess ? '#10b981' : isRunning ? '#6366f1' : '#ef4444'}
+                    />
+                  );
+                })}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
