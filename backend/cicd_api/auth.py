@@ -25,6 +25,7 @@ ENDPOINT_ROLES: dict[str, str] = {
     "users.create_user": "admin",
     "users.update_user": "admin",
     "settings.get_settings": "admin",
+    "settings.set_github_token": "admin",
 }
 
 def get_minimum_role_for_endpoint(endpoint: str | None) -> str:

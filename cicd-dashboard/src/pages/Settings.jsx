@@ -10,12 +10,18 @@ import {
   Save,
   Shield,
   Key,
+  Github,
+  Eye,
+  EyeOff,
+  AlertTriangle,
+  Zap,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import SecretsChecklist from '../components/SecretsChecklist';
 import { Button, Card, Input, Badge, Skeleton } from '../components/ui';
-import { fetchPlatformConfig, updatePlatformConfig } from '../api/pipelineApi';
+import { fetchPlatformConfig, updatePlatformConfig, saveGithubToken } from '../api/pipelineApi';
 
 export default function Settings({ onRepoChange }) {
   const { isAdmin } = useAuth();
@@ -25,6 +31,11 @@ export default function Settings({ onRepoChange }) {
   const [copiedKey, setCopiedKey] = useState(null);
   const [isEditingRepo, setIsEditingRepo] = useState(false);
   const [repoInput, setRepoInput] = useState('');
+
+  // GitHub Token state
+  const [tokenInput, setTokenInput] = useState('');
+  const [showToken, setShowToken] = useState(false);
+  const [savingToken, setSavingToken] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -65,6 +76,29 @@ export default function Settings({ onRepoChange }) {
     }
   };
 
+  const handleSaveToken = async (e) => {
+    e.preventDefault();
+    const cleanToken = tokenInput.trim();
+    if (!cleanToken) {
+      toast.error('Please enter a GitHub Personal Access Token.');
+      return;
+    }
+    setSavingToken(true);
+    try {
+      await saveGithubToken(cleanToken);
+      toast.success('GitHub token configured! Switched to live GitHub data.');
+      setTokenInput('');
+      setShowToken(false);
+      // Reload config to reflect new state
+      const freshConfig = await fetchPlatformConfig();
+      setConfig(freshConfig);
+    } catch (err) {
+      toast.error(err.message || 'Failed to save GitHub token.');
+    } finally {
+      setSavingToken(false);
+    }
+  };
+
   if (!isAdmin) {
     return (
       <Card className="p-8 text-center max-w-lg mx-auto mt-12">
@@ -90,6 +124,9 @@ export default function Settings({ onRepoChange }) {
     );
   }
 
+  const needsToken = config?.needsGithubToken;
+  const tokenConfigured = config?.githubTokenConfigured;
+
   return (
     <div className="space-y-6 animate-fade-in pb-12">
       {/* Header */}
@@ -101,6 +138,151 @@ export default function Settings({ onRepoChange }) {
           Configure connected GitHub repositories, AWS host endpoints, and verify secret checklist.
         </p>
       </div>
+
+      {/* GitHub Token Configuration Card — shown prominently when needed */}
+      {needsToken && (
+        <Card className="p-6 border-2 border-amber-400/60 dark:border-amber-500/40 bg-gradient-to-br from-amber-50/50 via-transparent to-transparent dark:from-amber-950/20">
+          <div className="flex items-start gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-700/60 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-heading font-bold text-content-primary">
+                GitHub Token Required
+              </h2>
+              <p className="text-xs text-content-secondary mt-0.5">
+                The platform is in <strong>real mode</strong> but no GitHub token has been configured yet. 
+                Enter your <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" className="text-brand-600 dark:text-brand-400 underline hover:no-underline">Personal Access Token (PAT)</a> below 
+                to connect to live GitHub Actions data.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveToken} className="space-y-3">
+            <div className="relative max-w-lg">
+              <input
+                id="github-token-input"
+                type={showToken ? 'text' : 'password'}
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                className="w-full px-4 py-2.5 pr-20 rounded-xl bg-white dark:bg-gray-900 border border-border-subtle 
+                  text-sm font-mono text-content-primary placeholder:text-content-muted
+                  focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500
+                  transition-all duration-200"
+                autoComplete="off"
+                spellCheck="false"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken(!showToken)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-content-muted hover:text-content-secondary transition-colors"
+                title={showToken ? 'Hide token' : 'Show token'}
+              >
+                {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Button
+                type="submit"
+                variant="primary"
+                size="md"
+                disabled={savingToken || !tokenInput.trim()}
+                leftIcon={savingToken
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <Zap className="w-4 h-4" />
+                }
+              >
+                {savingToken ? 'Connecting...' : 'Connect to GitHub'}
+              </Button>
+              <span className="text-[10px] text-content-muted">
+                Requires <code className="bg-surface-subtle px-1 py-0.5 rounded text-[10px]">repo</code> and <code className="bg-surface-subtle px-1 py-0.5 rounded text-[10px]">workflow</code> scopes
+              </span>
+            </div>
+          </form>
+        </Card>
+      )}
+
+      {/* GitHub Token Status Card — shown when token is already configured */}
+      <Card className="p-6">
+        <div className="flex items-center gap-2.5 mb-1">
+          <Github className="w-5 h-5 text-brand-500" />
+          <h2 className="text-base font-heading font-bold text-content-primary">
+            GitHub Connection
+          </h2>
+          {tokenConfigured ? (
+            <Badge variant="success" size="sm">Connected</Badge>
+          ) : needsToken ? (
+            <Badge variant="warning" size="sm">Not Connected</Badge>
+          ) : (
+            <Badge variant="muted" size="sm">Mock Mode</Badge>
+          )}
+        </div>
+        <p className="text-xs text-content-secondary mb-4">
+          {tokenConfigured
+            ? 'Authenticated with GitHub. Pipeline data is sourced from live GitHub Actions.'
+            : needsToken
+              ? 'Provide a GitHub Personal Access Token above to start receiving live data.'
+              : 'Running in mock mode with sample data.'
+          }
+        </p>
+
+        {tokenConfigured && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                <span className="text-sm font-medium text-content-primary">Token active — live data enabled</span>
+              </div>
+            </div>
+
+            {/* Allow re-configuring the token */}
+            <details className="group">
+              <summary className="cursor-pointer text-xs text-content-muted hover:text-content-secondary transition-colors select-none">
+                Update GitHub Token...
+              </summary>
+              <form onSubmit={handleSaveToken} className="mt-3 space-y-3">
+                <div className="relative max-w-lg">
+                  <input
+                    id="github-token-update"
+                    type={showToken ? 'text' : 'password'}
+                    value={tokenInput}
+                    onChange={(e) => setTokenInput(e.target.value)}
+                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    className="w-full px-4 py-2.5 pr-20 rounded-xl bg-white dark:bg-gray-900 border border-border-subtle 
+                      text-sm font-mono text-content-primary placeholder:text-content-muted
+                      focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500
+                      transition-all duration-200"
+                    autoComplete="off"
+                    spellCheck="false"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowToken(!showToken)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-content-muted hover:text-content-secondary transition-colors"
+                  >
+                    {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  size="sm"
+                  disabled={savingToken || !tokenInput.trim()}
+                  leftIcon={savingToken
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <Save className="w-4 h-4" />
+                  }
+                >
+                  {savingToken ? 'Updating...' : 'Update Token'}
+                </Button>
+              </form>
+            </details>
+          </div>
+        )}
+      </Card>
 
       {/* Repository Settings Card */}
       <Card className="p-6">

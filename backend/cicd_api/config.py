@@ -93,19 +93,9 @@ def load_config(overrides: dict | None = None) -> Config:
                 "DATABASE_URL must start with postgresql:// or postgres://"
             )
 
-    # Fail fast validations
-    if not cfg.use_mock:
-        missing = []
-        if not cfg.github_token:
-            missing.append("GITHUB_TOKEN")
-        if not cfg.github_owner:
-            missing.append("GITHUB_OWNER")
-        if not cfg.github_repo:
-            missing.append("GITHUB_REPO")
-        if missing:
-            raise ValueError(
-                f"Fail fast: Real mode (USE_MOCK=false) requires {', '.join(missing)} to be set."
-            )
+    # Note: GITHUB_TOKEN is no longer fail-fast validated at startup.
+    # It can be configured at runtime via the Settings UI.
+    # The provider factory handles the missing-token case gracefully.
 
     if len(cfg.secret_key) < 32 or cfg.secret_key == DEFAULT_SECRET_KEY or cfg.secret_key == "default":
         raise ValueError(

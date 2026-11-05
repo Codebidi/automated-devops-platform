@@ -304,13 +304,31 @@ export async function fetchPlatformConfig() {
           name: s.name,
           configured: Boolean(s.configured),
         })),
+        useMock: Boolean(data.use_mock),
+        needsGithubToken: Boolean(data.needs_github_token),
+        githubTokenConfigured: Boolean(data.github_token_configured),
       };
     }
   } catch (err) {
     console.warn('API error in fetchPlatformConfig, using fallback:', err);
   }
 
-  return { ...initialPlatformConfig };
+  return { ...initialPlatformConfig, useMock: true, needsGithubToken: false, githubTokenConfigured: false };
+}
+
+/**
+ * Save GitHub Personal Access Token to the backend.
+ */
+export async function saveGithubToken(token) {
+  const res = await fetchWithAuth(`${API_BASE}/settings/github-token`, {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to save GitHub token');
+  }
+  return data;
 }
 
 /**

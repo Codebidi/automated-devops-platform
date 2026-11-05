@@ -6,6 +6,7 @@ from .db import init_db, seed_database, get_db, close_db, db_execute, db_fetchon
 from .security import decode_auth_token, verify_api_key_constant_time
 from .auth import PUBLIC_ENDPOINTS, get_minimum_role_for_endpoint, has_required_role
 from .services.factory import create_provider
+from .services.mock_provider import MockProvider
 from .services.errors import ApiError
 
 from .routes.health import health_bp
@@ -25,7 +26,14 @@ def create_app(overrides: dict | None = None) -> Flask:
 
     app = Flask(__name__)
     app.config["APP_CONFIG"] = cfg
-    app.config["PROVIDER"] = create_provider(cfg)
+
+    # If in real mode but missing token, start with MockProvider and flag it
+    if not cfg.use_mock and not cfg.github_token:
+        app.config["PROVIDER"] = MockProvider()
+        app.config["NEEDS_GITHUB_TOKEN"] = True
+    else:
+        app.config["PROVIDER"] = create_provider(cfg)
+        app.config["NEEDS_GITHUB_TOKEN"] = False
 
     # Initialize database tables and demo/initial data
     init_db(app)
