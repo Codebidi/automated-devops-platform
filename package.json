@@ -1,0 +1,12 @@
+{
+  "name": "ai-devops-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DeployHub - AI-Driven CI/CD & DevOps Orchestration Platform",
+  "scripts": {
+    "dev": "npm --prefix cicd-dashboard run dev",
+    "build": "npm --prefix cicd-dashboard run build",
+    "preview": "npm --prefix cicd-dashboard run preview -- --port 8080 --host",
+    "start": "npm --prefix cicd-dashboard run preview -- --port 8080 --host"
+  }
+}

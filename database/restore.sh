@@ -9,7 +9,7 @@ set -eu
 BACKUP_FILE="${1:-}"
 
 if [ -z "$BACKUP_FILE" ]; then
-    echo "Usage: $0 <backup.sql.gz>" >&2
+    echo "Usage: $0 <backup.sql.gz>" 1>&2
     exit 1
 fi
 
