@@ -1,8 +1,9 @@
+from dataclasses import replace
 import logging
 from flask import Flask, request, jsonify, g
 from werkzeug.exceptions import HTTPException
-from .config import Config, load_config
-from .db import init_db, seed_database, get_db, close_db, db_execute, db_fetchone
+from .config import Config, load_config, validate_real_mode
+from .db import init_db, seed_database, get_db, close_db, db_execute, db_fetchone, get_active_repository
 from .security import decode_auth_token, verify_api_key_constant_time
 from .auth import PUBLIC_ENDPOINTS, get_minimum_role_for_endpoint, has_required_role
 from .services.factory import create_provider
@@ -17,6 +18,7 @@ from .routes.stats import stats_bp
 from .routes.deployments import deployments_bp
 from .routes.settings import settings_bp
 from .routes.webhooks import webhooks_bp
+from .routes.diagnostics import diagnostics_bp
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,20 @@ def create_app(overrides: dict | None = None) -> Flask:
     init_db(app)
     seed_database(app)
 
+    # Restore active repository from database when not explicitly overridden
+    if not overrides or ("github_owner" not in overrides and "github_repo" not in overrides):
+        with app.app_context():
+            active_repo = get_active_repository(get_db())
+            if active_repo and (active_repo["owner"] != cfg.github_owner or active_repo["repo"] != cfg.github_repo):
+                cfg = replace(cfg, github_owner=active_repo["owner"], github_repo=active_repo["repo"])
+                app.config["APP_CONFIG"] = cfg
+                if cfg.use_mock or cfg.github_token:
+                    app.config["PROVIDER"] = create_provider(cfg)
+
+    if not cfg.use_mock:
+        for err_msg in validate_real_mode(cfg):
+            logger.warning("Real mode config issue: %s", err_msg)
+
     # Register blueprints under /api
     app.register_blueprint(health_bp)
     app.register_blueprint(auth_bp)
@@ -48,6 +64,7 @@ def create_app(overrides: dict | None = None) -> Flask:
     app.register_blueprint(deployments_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(webhooks_bp)
+    app.register_blueprint(diagnostics_bp)
 
     # Database connection teardown
     app.teardown_appcontext(close_db)

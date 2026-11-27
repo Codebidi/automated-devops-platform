@@ -20,7 +20,7 @@ import { Button, Input, Card, Badge } from '../components/ui';
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, isAuthenticated, sessionExpired } = useAuth();
+  const { login, isAuthenticated, sessionExpired, backendMode } = useAuth();
 
   const [username, setUsername] = useState(() => {
     try {
@@ -252,7 +252,8 @@ export default function Login() {
                 </div>
               </form>
 
-              {/* Demo Accounts Quick-Select Chips */}
+              {/* Demo Accounts Quick-Select Chips (hidden in real mode) */}
+              {backendMode === 'mock' && (
               <div className="mt-8 pt-6 border-t border-border-subtle">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-semibold uppercase tracking-wider text-content-muted">
@@ -304,6 +305,7 @@ export default function Login() {
                   </button>
                 </div>
               </div>
+              )}
             </div>
           </div>
         </div>

@@ -60,6 +60,28 @@ FROM users
 WHERE is_active = 0
 ORDER BY username;
 
+-- ----------------------------------------------------------------------------
+
+-- All connected repositories (active first)
+SELECT id, full_name, branch, workflow_file, rollback_workflow_file, is_active, updated_at
+FROM repositories
+ORDER BY is_active DESC, updated_at DESC;
+
+-- ----------------------------------------------------------------------------
+
+-- Platform settings key/value pairs
+SELECT key, value, updated_at
+FROM platform_settings
+ORDER BY key;
+
+-- ----------------------------------------------------------------------------
+
+-- Recent audit logs
+SELECT id, actor, action, target, details, created_at
+FROM audit_logs
+ORDER BY created_at DESC
+LIMIT 50;
+
 -- =============================================================================
 -- WRITE queries (COMMENTED OUT – uncomment deliberately)
 -- =============================================================================

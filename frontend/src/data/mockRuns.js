@@ -82,11 +82,12 @@ export const initialPlatformConfig = {
   secrets: [
     { name: "AWS_ACCESS_KEY_ID", configured: true, lastUpdated: "2 days ago" },
     { name: "AWS_SECRET_ACCESS_KEY", configured: true, lastUpdated: "2 days ago" },
-    { name: "EC2_SSH_PRIVATE_KEY", configured: true, lastUpdated: "1 week ago" },
+    { name: "AWS_REGION", configured: true, lastUpdated: "2 days ago" },
     { name: "EC2_HOST", configured: true, lastUpdated: "2 weeks ago" },
-    { name: "SLACK_WEBHOOK_URL", configured: true, lastUpdated: "1 month ago" },
-    { name: "SENTRY_AUTH_TOKEN", configured: false, lastUpdated: "Not configured" },
-    { name: "DATADOG_API_KEY", configured: true, lastUpdated: "3 weeks ago" },
+    { name: "EC2_USER", configured: true, lastUpdated: "2 weeks ago" },
+    { name: "EC2_SSH_KEY", configured: true, lastUpdated: "1 week ago" },
+    { name: "WEBHOOK_SECRET", configured: true, lastUpdated: "2 days ago" },
+    { name: "DASHBOARD_API_URL", configured: true, lastUpdated: "2 days ago" },
   ]
 };
 

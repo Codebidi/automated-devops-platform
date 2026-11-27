@@ -25,14 +25,16 @@ import { fetchRuns, fetchCurrentlyDeployed } from '../api/pipelineApi';
 import { formatSha, formatDuration } from '../utils/formatters';
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [runs, setRuns] = useState([]);
   const [deployedApp, setDeployedApp] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState('');
 
   useEffect(() => {
     async function loadData() {
       try {
+        setApiError('');
         const [runsRes, deployedRes] = await Promise.all([
           fetchRuns(),
           fetchCurrentlyDeployed(),
@@ -41,6 +43,7 @@ export default function Dashboard() {
         setDeployedApp(deployedRes);
       } catch (err) {
         console.error('Failed to load dashboard data', err);
+        setApiError(err.message || 'Failed to load pipeline data.');
       } finally {
         setLoading(false);
       }
@@ -112,6 +115,30 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* GitHub API Error Banner */}
+      {apiError && (
+        <Card className="p-4 border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="text-xs text-rose-800 dark:text-rose-200">
+              <strong className="block font-semibold">GitHub Connection Issue</strong>
+              <span>{apiError}</span>
+              {!isAdmin && (
+                <span className="block mt-1 text-rose-700 dark:text-rose-300">
+                  Please contact an administrator to verify GitHub token and repository settings.
+                </span>
+              )}
+            </div>
+            {isAdmin && (
+              <Link to="/app/settings">
+                <Button variant="secondary" size="sm">
+                  Go to Settings
+                </Button>
+              </Link>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* Currently Deployed Hero Card */}
       {deployedApp && (
         <Card className="p-6 bg-gradient-to-br from-surface to-surface-subtle dark:from-surface-elevated dark:to-surface border-border-strong relative overflow-hidden">
@@ -127,9 +154,7 @@ export default function Dashboard() {
                   <h2 className="text-base sm:text-lg font-heading font-bold text-content-primary">
                     Active Production Container
                   </h2>
-                  <Badge variant="success" size="sm" dot>
-                    HEALTHY
-                  </Badge>
+                  <HealthIndicator status={deployedApp.healthStatus || 'unknown'} endpoint={deployedApp.healthCheckEndpoint || '/health'} compact />
                 </div>
                 <p className="mt-1 text-xs sm:text-sm font-medium text-content-secondary line-clamp-1">
                   {deployedApp.commitMessage || 'Stable release container'}
@@ -199,11 +224,17 @@ export default function Dashboard() {
         />
         <StatCard
           title="Production Runtime"
-          value="Healthy"
-          subtext="Postgres 16 / SQLite dual"
+          value={
+            deployedApp?.healthStatus === 'healthy'
+              ? 'Healthy'
+              : deployedApp?.healthStatus === 'unhealthy'
+              ? 'Unhealthy'
+              : 'Unknown'
+          }
+          subtext={deployedApp ? 'Live deployment monitor' : 'No active deployment yet'}
           icon={Server}
-          trend="100% Up"
-          trendUp={true}
+          trend={deployedApp?.healthStatus === 'healthy' ? 'Online' : (deployedApp?.healthStatus === 'unhealthy' ? 'Failing' : 'Unprobed')}
+          trendUp={deployedApp?.healthStatus === 'healthy'}
           sparklineData={[1, 1, 1, 1, 1, 1, 1, 1]}
         />
       </div>

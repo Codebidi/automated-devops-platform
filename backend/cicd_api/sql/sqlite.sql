@@ -40,3 +40,41 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_deployments_single_current
 -- Fast newest-first lookup
 CREATE INDEX IF NOT EXISTS ix_deployments_deployed_at
     ON deployments (deployed_at DESC);
+
+CREATE TABLE IF NOT EXISTS repositories (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner                   TEXT    NOT NULL,
+    repo                    TEXT    NOT NULL,
+    full_name               TEXT    NOT NULL,
+    branch                  TEXT    NOT NULL DEFAULT 'main',
+    workflow_file           TEXT    NOT NULL DEFAULT 'deploy.yml',
+    rollback_workflow_file  TEXT    NOT NULL DEFAULT 'rollback.yml',
+    is_active               INTEGER NOT NULL DEFAULT 0 CHECK(is_active IN (0, 1)),
+    created_at              TEXT    NOT NULL,
+    updated_at              TEXT    NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_repositories_full_name_lower
+    ON repositories (lower(full_name));
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_repositories_single_active
+    ON repositories (is_active)
+    WHERE is_active = 1;
+
+CREATE TABLE IF NOT EXISTS platform_settings (
+    key         TEXT PRIMARY KEY,
+    value       TEXT,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor       TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    target      TEXT,
+    details     TEXT,
+    created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at
+    ON audit_logs (created_at DESC);

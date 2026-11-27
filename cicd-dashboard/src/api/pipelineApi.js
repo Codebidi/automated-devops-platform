@@ -8,8 +8,14 @@ let isAuthenticating = null;
  * Ensures an active authentication Bearer token is available.
  */
 async function getAuthToken(force = false) {
-  if (cachedToken && !force) {
-    return cachedToken;
+  if (!force) {
+    try {
+      const stored = localStorage.getItem('deployhub_auth_token');
+      if (stored && !stored.startsWith('mock-jwt-token-')) {
+        return stored;
+      }
+    } catch {}
+    if (cachedToken) return cachedToken;
   }
   if (isAuthenticating && !force) {
     return isAuthenticating;
@@ -137,7 +143,29 @@ export async function fetchRuns(filters = {}) {
         lastUpdated: data.last_updated ?? new Date().toISOString(),
       };
     }
+    // Propagate real backend/GitHub errors (401/403/404/502) instead of masking them with mock data
+    if (res.status >= 400 && res.status !== 404) {
+      let errMsg = `Failed to fetch pipeline runs (HTTP ${res.status})`;
+      try {
+        const errBody = await res.json();
+        if (errBody && errBody.error) errMsg = errBody.error;
+      } catch {}
+      throw new Error(errMsg);
+    }
+    if (res.status === 404) {
+      let errMsg = '';
+      try {
+        const errBody = await res.json();
+        if (errBody && errBody.error) errMsg = errBody.error;
+      } catch {}
+      if (errMsg && errMsg.toLowerCase().includes('github')) {
+        throw new Error(errMsg);
+      }
+    }
   } catch (err) {
+    if (err && err.message && (err.message.includes('GitHub') || err.message.includes('GITHUB_') || err.message.includes('rate limit'))) {
+      throw err;
+    }
     console.warn('API error in fetchRuns, using fallback:', err);
   }
 
@@ -300,6 +328,9 @@ export async function fetchPlatformConfig() {
         awsRegion: data.region || initialPlatformConfig.awsRegion,
         ec2Host: data.ec2_host || initialPlatformConfig.ec2Host,
         ecrRepo: data.ecr_repository || initialPlatformConfig.ecrRepo,
+        ecrRegistry: data.ecr_registry || null,
+        appHealthUrl: data.app_health_url || null,
+        appPort: data.app_port || 5000,
         secrets: (data.secrets || []).map(s => ({
           name: s.name,
           configured: Boolean(s.configured),
@@ -332,15 +363,21 @@ export async function saveGithubToken(token) {
 }
 
 /**
- * Update repository configuration.
+ * Update repository configuration on the backend (admin only).
  */
 export async function updatePlatformConfig(updates) {
-  const current = await fetchPlatformConfig();
-  return {
-    ...current,
-    ...updates,
-    repoUrl: updates.repoUrl || (updates.repoName ? `https://github.com/${updates.repoName}` : current.repoUrl),
-  };
+  if (updates && updates.repoName) {
+    const res = await fetchWithAuth(`${API_BASE}/settings/repository`, {
+      method: 'POST',
+      body: JSON.stringify({ repository: updates.repoName }),
+    });
+    const text = await res.text();
+    const data = text && text.trim().startsWith('{') ? JSON.parse(text) : {};
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to save repository configuration.');
+    }
+  }
+  return fetchPlatformConfig();
 }
 
 /**
@@ -383,6 +420,32 @@ export async function rollbackDeployment(targetRunId) {
     message: `Successfully updated target deployment to ${targetRunId}`,
     activeRunId: targetRunId,
   };
+}
+
+/**
+ * Import historical successful runs into deployments (admin only).
+ */
+export async function importDeploymentsHistory() {
+  const res = await fetchWithAuth(`${API_BASE}/deployments/import`, {
+    method: 'POST',
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to import deployment history');
+  }
+  return data;
+}
+
+/**
+ * Run backend preflight diagnostics checks (admin only).
+ */
+export async function fetchDiagnostics() {
+  const res = await fetchWithAuth(`${API_BASE}/diagnostics`);
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to run diagnostics');
+  }
+  return data;
 }
 
 /**

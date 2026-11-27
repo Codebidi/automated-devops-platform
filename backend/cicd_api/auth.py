@@ -21,11 +21,14 @@ ENDPOINT_ROLES: dict[str, str] = {
     "runs.get_stage_logs": "developer",
     # admin+
     "deployments.rollback": "admin",
+    "deployments.import_deployments": "admin",
+    "diagnostics.get_diagnostics": "admin",
     "users.list_users": "admin",
     "users.create_user": "admin",
     "users.update_user": "admin",
     "settings.get_settings": "admin",
     "settings.set_github_token": "admin",
+    "settings.update_repository": "admin",
 }
 
 def get_minimum_role_for_endpoint(endpoint: str | None) -> str:

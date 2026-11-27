@@ -14,5 +14,8 @@ def create_provider(cfg: Config, session=None):
         workflow_file=cfg.github_workflow_file,
         rollback_workflow_file=cfg.rollback_workflow_file,
         cache_ttl_seconds=cfg.cache_ttl_seconds,
+        ecr_registry=cfg.ecr_registry,
+        ecr_repository=cfg.ecr_repository or None,
+        branch=cfg.github_branch,
         session=session,
     )

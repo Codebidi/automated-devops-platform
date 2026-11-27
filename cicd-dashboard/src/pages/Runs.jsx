@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Search, Filter, RefreshCw, X, GitBranch, Layers } from 'lucide-react';
 import RunsTable from '../components/RunsTable';
+import { useAuth } from '../context/AuthContext';
 import { Button, Input, Select, Tabs, Skeleton, EmptyState, Card } from '../components/ui';
 import { fetchRuns } from '../api/pipelineApi';
 
 export default function Runs() {
+  const { isAdmin } = useAuth();
   const [runs, setRuns] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
@@ -16,6 +20,7 @@ export default function Runs() {
     async function load() {
       try {
         setLoading(true);
+        setApiError('');
         const res = await fetchRuns({
           status: statusFilter,
           branch: branchFilter,
@@ -24,6 +29,7 @@ export default function Runs() {
         if (isMounted) setRuns(res.runs || []);
       } catch (err) {
         console.error('Failed to load runs', err);
+        if (isMounted) setApiError(err.message || 'Failed to load pipeline runs.');
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -126,13 +132,34 @@ export default function Runs() {
         <Card className="p-6">
           <Skeleton variant="card" count={4} />
         </Card>
+      ) : apiError ? (
+        <Card className="p-6 border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="text-xs text-rose-800 dark:text-rose-200">
+              <strong className="block font-semibold text-sm mb-1">Unable to Load GitHub Pipeline Runs</strong>
+              <span>{apiError}</span>
+              {!isAdmin && (
+                <span className="block mt-1 text-rose-700 dark:text-rose-300">
+                  Please contact an administrator to verify GitHub token and repository settings.
+                </span>
+              )}
+            </div>
+            {isAdmin && (
+              <Link to="/app/settings">
+                <Button variant="secondary" size="sm">
+                  Go to Settings
+                </Button>
+              </Link>
+            )}
+          </div>
+        </Card>
       ) : runs.length === 0 ? (
         <EmptyState
-          title="No Matching Runs"
+          title={hasActiveFilters ? 'No Matching Runs' : 'No Pipeline Runs Yet'}
           description={
             hasActiveFilters
               ? 'No pipeline runs match the selected filters. Try clearing your search or status filter.'
-              : 'No pipeline executions found.'
+              : 'Push to main to start your first pipeline.'
           }
           action={
             hasActiveFilters && (

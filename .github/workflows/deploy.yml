@@ -7,10 +7,11 @@ on:
     branches: [ main ]
 
 env:
-  AWS_REGION: us-east-1
-  ECR_REPOSITORY: 123456789012.dkr.ecr.us-east-1.amazonaws.com/codebidi-platform
-  EC2_HOST: ec2-54-210-92-14.compute-1.amazonaws.com
-  APP_PORT: 8080
+  AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  EC2_HOST: ${{ secrets.EC2_HOST }}
+  EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+  APP_PORT: ${{ vars.APP_PORT || '5000' }}
 
 jobs:
   test:
@@ -33,8 +34,8 @@ jobs:
 
       - name: Run flake8 lint
         run: |
-          flake8 backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 backend/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          flake8 backend --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 backend --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: Run pytest
         run: |
@@ -49,6 +50,13 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
+      - name: Validate Repository Variables
+        run: |
+          if [ -z "$ECR_REPOSITORY" ]; then
+            echo "::error::Repository variable ECR_REPOSITORY is empty. Set vars.ECR_REPOSITORY in GitHub Settings -> Secrets and variables -> Actions -> Variables."
+            exit 1
+          fi
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -62,38 +70,45 @@ jobs:
 
       - name: Determine Image Tag
         id: vars
+        env:
+          GITHUB_SHA_VAL: ${{ github.sha }}
+          GITHUB_RUN_NUM: ${{ github.run_number }}
+          ECR_REGISTRY_VAL: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          TAG="v2.4.${{ github.run_number }}-${SHORT_SHA}"
+          SHORT_SHA=$(echo "$GITHUB_SHA_VAL" | cut -c1-7)
+          TAG="v2.4.${GITHUB_RUN_NUM}-${SHORT_SHA}"
           echo "IMAGE_TAG=${TAG}" >> $GITHUB_ENV
-          echo "IMAGE_URI=${{ env.ECR_REPOSITORY }}:${TAG}" >> $GITHUB_ENV
+          echo "ECR_REGISTRY=${ECR_REGISTRY_VAL}" >> $GITHUB_ENV
+          echo "IMAGE_URI=${ECR_REGISTRY_VAL}/${ECR_REPOSITORY}:${TAG}" >> $GITHUB_ENV
+          echo "LATEST_URI=${ECR_REGISTRY_VAL}/${ECR_REPOSITORY}:latest" >> $GITHUB_ENV
 
       - name: Build Docker image
         run: |
-          docker build -t ${{ env.IMAGE_URI }} -t ${{ env.ECR_REPOSITORY }}:latest backend/
+          docker build -t "${IMAGE_URI}" -t "${LATEST_URI}" ./backend
 
       - name: Push to ECR
         run: |
-          docker push ${{ env.IMAGE_URI }}
-          docker push ${{ env.ECR_REPOSITORY }}:latest
+          docker push "${IMAGE_URI}"
+          docker push "${LATEST_URI}"
 
       - name: Deploy to EC2 and verify health
         id: deploy_ec2
         env:
-          EC2_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          EC2_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
           echo "$EC2_KEY" > deploy_key.pem && chmod 600 deploy_key.pem
-          PREV_CONTAINER=$(ssh -o StrictHostKeyChecking=no -i deploy_key.pem ubuntu@${{ env.EC2_HOST }} 'docker ps -q --filter name=devops-web' || true)
+          PREV_CONTAINER=$(ssh -o StrictHostKeyChecking=no -i deploy_key.pem "${EC2_USER}@${EC2_HOST}" 'docker ps -q --filter name=app-live' || true)
 
-          ssh -o StrictHostKeyChecking=no -i deploy_key.pem ubuntu@${{ env.EC2_HOST }} \
-            "docker pull ${{ env.IMAGE_URI }} && \
-             docker stop devops-web-temp || true && \
-             docker run -d --name devops-web-new -p ${{ env.APP_PORT }}:8000 ${{ env.IMAGE_URI }}"
+          ssh -o StrictHostKeyChecking=no -i deploy_key.pem "${EC2_USER}@${EC2_HOST}" \
+            "docker pull ${IMAGE_URI} && \
+             docker stop app-temp || true && \
+             docker rm -f app-new || true && \
+             docker run -d --name app-new -e PORT=${APP_PORT} -p ${APP_PORT}:${APP_PORT} ${IMAGE_URI}"
 
-          echo "Checking app health probe..."
+          echo "Checking app health probe on port ${APP_PORT}..."
           HEALTHY=false
           for i in {1..10}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ env.EC2_HOST }}:${{ env.APP_PORT }}/health || true)
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${EC2_HOST}:${APP_PORT}/health" || true)
             if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 400 ]; then
               HEALTHY=true
               break
@@ -103,14 +118,14 @@ jobs:
 
           if [ "$HEALTHY" = "true" ]; then
             echo "Health probe passed. Promoting new container."
-            ssh -o StrictHostKeyChecking=no -i deploy_key.pem ubuntu@${{ env.EC2_HOST }} \
-              "docker rm -f devops-web || true && docker rename devops-web-new devops-web"
+            ssh -o StrictHostKeyChecking=no -i deploy_key.pem "${EC2_USER}@${EC2_HOST}" \
+              "docker rm -f app-live || true && docker rename app-new app-live"
             echo "DEPLOY_STATUS=success" >> $GITHUB_ENV
             echo "DEPLOY_HEALTH=healthy" >> $GITHUB_ENV
           else
             echo "Health probe failed! Rolling back to previous container."
-            ssh -o StrictHostKeyChecking=no -i deploy_key.pem ubuntu@${{ env.EC2_HOST }} \
-              "docker rm -f devops-web-new || true && docker start $PREV_CONTAINER || true"
+            ssh -o StrictHostKeyChecking=no -i deploy_key.pem "${EC2_USER}@${EC2_HOST}" \
+              "docker rm -f app-new || true && [ -n \"$PREV_CONTAINER\" ] && docker start \"$PREV_CONTAINER\" || true"
             echo "DEPLOY_STATUS=failed" >> $GITHUB_ENV
             echo "DEPLOY_HEALTH=unhealthy" >> $GITHUB_ENV
             exit 1
@@ -118,14 +133,24 @@ jobs:
 
       - name: Notify dashboard
         if: always()
+        continue-on-error: true
         env:
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
           DASHBOARD_URL: ${{ secrets.DASHBOARD_API_URL }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_ID: ${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
         run: |
+          if [ -z "$DASHBOARD_URL" ] || [ -z "$WEBHOOK_SECRET" ]; then
+            echo "::warning::Skipping dashboard notification: DASHBOARD_API_URL or WEBHOOK_SECRET is not configured."
+            exit 0
+          fi
+
           STATUS="${DEPLOY_STATUS:-failed}"
           HEALTH="${DEPLOY_HEALTH:-unknown}"
-          if [ "${{ job.status }}" != "success" ] && [ "$STATUS" = "success" ]; then
+          if [ "$JOB_STATUS" != "success" ] && [ "$STATUS" = "success" ]; then
             STATUS="failed"
           fi
 
@@ -134,15 +159,28 @@ jobs:
             --arg image_uri "${IMAGE_URI:-}" \
             --arg status "$STATUS" \
             --arg health "$HEALTH" \
-            --arg commit_sha "${{ github.sha }}" \
+            --arg commit_sha "$COMMIT_SHA" \
             --arg commit_message "$COMMIT_MSG" \
-            --arg author "${{ github.actor }}" \
-            --arg run_id "${{ github.run_id }}" \
+            --arg author "$ACTOR" \
+            --arg run_id "$RUN_ID" \
             '{image_tag: $image_tag, image_uri: $image_uri, status: $status, health: $health, commit_sha: $commit_sha, commit_message: $commit_message, author: $author, run_id: $run_id}')
 
           SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | sed 's/^.* //')
 
-          curl -s -X POST "${DASHBOARD_URL}/api/webhooks/deployment" \
-            -H "Content-Type: application/json" \
-            -H "X-Signature-256: sha256=$SIG" \
-            -d "$BODY" || echo "Webhook notification delivered or completed."
+          DELIVERED=false
+          for attempt in 1 2 3; do
+            if curl --fail --silent --show-error --max-time 15 -X POST "${DASHBOARD_URL%/}/api/webhooks/deployment" \
+              -H "Content-Type: application/json" \
+              -H "X-Signature-256: sha256=$SIG" \
+              -d "$BODY"; then
+              DELIVERED=true
+              echo "Dashboard webhook delivered on attempt $attempt."
+              break
+            fi
+            echo "::warning::Dashboard webhook attempt $attempt failed; retrying..."
+            sleep $((attempt * 2))
+          done
+
+          if [ "$DELIVERED" != "true" ]; then
+            echo "::warning::Could not reach dashboard at ${DASHBOARD_URL} after 3 attempts. Deployment itself is unaffected."
+          fi

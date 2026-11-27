@@ -178,6 +178,15 @@ export default function RunDetail() {
               {run.imageTag || '—'}
             </span>
           </div>
+
+          <div>
+            <span className="text-content-muted block uppercase tracking-wider text-[10px] font-semibold">
+              Image URI
+            </span>
+            <span className="mt-1 font-mono text-xs text-content-secondary break-all">
+              {run.ecrUri || 'not reported yet'}
+            </span>
+          </div>
         </div>
       </Card>
 

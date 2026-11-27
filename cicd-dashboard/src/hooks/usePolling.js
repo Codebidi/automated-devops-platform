@@ -4,7 +4,7 @@ import { simulatePipelineTick } from '../api/pipelineApi';
 /**
  * Custom hook for periodic background polling with manual trigger and timestamp
  */
-export function usePolling(callback, intervalMs = 10000, enabled = true) {
+export function usePolling(callback, intervalMs = 3600000, enabled = true) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(() => new Date());
   const savedCallback = useRef(callback);

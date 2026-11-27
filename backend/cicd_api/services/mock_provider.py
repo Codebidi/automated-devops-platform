@@ -281,10 +281,12 @@ class MockProvider:
             "secrets": [
                 {"name": "AWS_ACCESS_KEY_ID", "configured": True},
                 {"name": "AWS_SECRET_ACCESS_KEY", "configured": True},
-                {"name": "EC2_SSH_PRIVATE_KEY", "configured": True},
+                {"name": "AWS_REGION", "configured": True},
                 {"name": "EC2_HOST", "configured": True},
-                {"name": "SLACK_WEBHOOK_URL", "configured": True},
-                {"name": "SENTRY_AUTH_TOKEN", "configured": False},
+                {"name": "EC2_USER", "configured": True},
+                {"name": "EC2_SSH_KEY", "configured": True},
+                {"name": "WEBHOOK_SECRET", "configured": True},
+                {"name": "DASHBOARD_API_URL", "configured": True},
             ]
         }
 

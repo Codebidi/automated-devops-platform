@@ -154,15 +154,80 @@ To connect the platform to your live GitHub repository and AWS infrastructure:
 1. **Update `.env` in the project root**:
    ```dotenv
    USE_MOCK=false
-   GITHUB_TOKEN=ghp_yourPersonalAccessTokenHere
+   GITHUB_TOKEN=ghp_yourRealPersonalAccessTokenHere
    GITHUB_OWNER=your-github-username-or-org
    GITHUB_REPO=your-repository-name
    GITHUB_BRANCH=main
+   WEBHOOK_SECRET=your-hex-webhook-secret
    AWS_REGION=us-east-1
-   ECR_REPOSITORY=123456789012.dkr.ecr.us-east-1.amazonaws.com/your-app
+   ECR_REGISTRY=123456789012.dkr.ecr.us-east-1.amazonaws.com
+   ECR_REPOSITORY=my-app
    EC2_HOST=ec2-xx-xx-xx-xx.compute-1.amazonaws.com
-   APP_HEALTH_URL=http://ec2-xx-xx-xx-xx.compute-1.amazonaws.com/health
+   APP_PORT=5000
+   APP_HEALTH_URL=http://ec2-xx-xx-xx-xx.compute-1.amazonaws.com:5000/health
+   CORS_ORIGINS=http://localhost:8080,http://localhost:5173
    ```
+
+> **Environment Loading & Ports:**
+> - `docker compose` reads the root `.env`.
+> - Plain `python run.py` also reads `backend/.env` and the project-root `.env` automatically (real environment variables always take priority).
+> - Frontend commands run inside `frontend/` (or `cicd-dashboard/`). Vite dev runs on port **5173**, while Docker serves the frontend on port **8080**.
+
+---
+
+## 🔄 Switch from Demo to Real Mode (Checklist)
+
+Follow these steps in order when moving from demo mode (`USE_MOCK=true`) to a live GitHub + AWS repository:
+
+1. **Prepare EC2 and ECR**:
+   - Create an ECR repository (name only, e.g. `my-app`).
+   - Provision an EC2 instance with Docker, AWS CLI (or an IAM instance profile with `AmazonEC2ContainerRegistryReadOnly`), and open `APP_PORT` (default `5000`) + SSH (`22`) in its Security Group.
+2. **Add workflows, secrets, and variables to your app repository**:
+   - Copy `backend/workflows/deploy.yml` and `backend/workflows/rollback.yml` into `.github/workflows/` on the default branch (`main`).
+   - Add GitHub Secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY`, `WEBHOOK_SECRET`, `DASHBOARD_API_URL`.
+   - Add GitHub Variables: `ECR_REPOSITORY` (name only, e.g. `my-app`) and `APP_PORT` (e.g. `5000`).
+3. **Confirm the pipeline is green**:
+   - Push to `main` and verify the `deploy.yml` workflow passes all steps in GitHub Actions.
+4. **Configure `.env`**:
+   - Copy `.env.example` to `.env`, set `USE_MOCK=false`, generate hex secrets (`openssl rand -hex 24`), and set `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_REPO`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `APP_HEALTH_URL`.
+5. **Start DeployHub**:
+   - Run `docker compose up --build` (or `python run.py` in `backend/` and `npm run dev` in `frontend/`).
+   - If you previously ran in mock mode on the same database, reset or purge demo users first (see below).
+6. **Run `python manage.py check`**:
+   - Inside `backend/`, run `python manage.py check` (or click **Run checks** in Settings → Connection Checks) and resolve any `FAIL` or `WARN`.
+7. **Make the dashboard publicly reachable**:
+   - GitHub-hosted runners cannot reach `localhost`. Expose DeployHub via a public HTTPS server or tunnel (e.g. ngrok or Cloudflare Tunnel) and set GitHub secret `DASHBOARD_API_URL` to that URL.
+8. **Push again and watch the deployment appear**:
+   - Push a commit to `main` (or use **Import history from GitHub** on the Deployments page for past runs) and watch the signed webhook populate the live deployment.
+
+### Resetting a Database That Still Contains Demo Users
+
+If you switch an existing database from `USE_MOCK=true` to `USE_MOCK=false`:
+- **Option 1 (Keep DB, remove only demo accounts):**
+  ```bash
+  cd backend
+  python manage.py purge-demo-users
+  python manage.py create-admin
+  ```
+- **Option 2 (Fresh database volume in Docker):**
+  ```bash
+  docker compose down -v
+  docker compose up --build
+  ```
+
+### Diagnostics Troubleshooting Table
+
+| Diagnostics FAIL / WARN | Cause | Fix |
+| :--- | :--- | :--- |
+| **Mode & Database** (`FAIL`) | Database unreachable or schema tables missing | Check `DATABASE_URL` / `DATABASE_PATH`; ensure Postgres is running and `init_db` ran. |
+| **Demo Users Check** (`FAIL`) | Known demo accounts (`admin`/`developer`/`viewer` with demo passwords) exist in real mode | Run `python manage.py purge-demo-users` or reset the DB volume (`docker compose down -v`). |
+| **Application Secrets** (`FAIL`) | `SECRET_KEY` < 32 chars, placeholder, or `WEBHOOK_SECRET` missing | Generate hex secrets with `openssl rand -hex 24` and update `.env`. |
+| **GitHub Token & Repository** (`FAIL`) | 401 Bad credentials, 404 repo not found, or missing Actions scope | Verify `GITHUB_OWNER`, `GITHUB_REPO`, and regenerate `GITHUB_TOKEN` with `repo` + `workflow` scopes. |
+| **GitHub Workflows** (`FAIL`) | `deploy.yml` or `rollback.yml` missing, or `rollback.yml` lacks `workflow_dispatch` | Commit both workflow files to `.github/workflows/` on your default branch (`main`). |
+| **GitHub Secrets & Variables** (`FAIL`) | Missing required GitHub secrets or `ECR_REPOSITORY` variable | Add all 8 secrets and `ECR_REPOSITORY` / `APP_PORT` under GitHub Repo → Settings → Actions. |
+| **ECR Repository & Registry** (`FAIL`/`WARN`) | Placeholder in `ECR_REPOSITORY` or `ECR_REGISTRY` unknown | Set `ECR_REPOSITORY` to a repo name only (e.g. `my-app`) and set `ECR_REGISTRY`. |
+| **Application Health URL** (`FAIL`/`WARN`) | Target unreachable, non-2xx, or missing port when `APP_PORT` != 80/443 | Open `APP_PORT` in EC2 Security Group and set `APP_HEALTH_URL=http://<host>:<port>/health`. |
+| **Dashboard Webhook Reachability** (`WARN`) | `CORS_ORIGINS` or `DASHBOARD_API_URL` uses `localhost` | Use a public HTTPS server or tunnel (ngrok / Cloudflare Tunnel) for `DASHBOARD_API_URL`. |
 
 2. **Required GitHub Token Scopes**:
    - `repo` (Full repository control)

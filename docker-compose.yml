@@ -41,10 +41,12 @@ services:
       GITHUB_WORKFLOW_FILE: ${GITHUB_WORKFLOW_FILE:-deploy.yml}
       ROLLBACK_WORKFLOW_FILE: ${ROLLBACK_WORKFLOW_FILE:-rollback.yml}
       AWS_REGION: ${AWS_REGION:-us-east-1}
+      ECR_REGISTRY: ${ECR_REGISTRY:-}
       ECR_REPOSITORY: ${ECR_REPOSITORY:-}
       EC2_HOST: ${EC2_HOST:-}
+      APP_PORT: ${APP_PORT:-5000}
       APP_HEALTH_URL: ${APP_HEALTH_URL:-}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:

@@ -31,6 +31,23 @@ export function AuthProvider({ children }) {
 
   const [loading, setLoading] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [backendMode, setBackendMode] = useState(null); // 'mock' | 'real' | null
+
+  // Check backend mode via /api/health
+  useEffect(() => {
+    let active = true;
+    fetch('/api/health')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data && data.mode) {
+          setBackendMode(data.mode);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Validate session on app launch
   const verifySession = useCallback(async (activeToken) => {
@@ -115,8 +132,8 @@ export function AuthProvider({ children }) {
       }
     }
 
-    // Graceful fallback for Mock / Demo mode when backend API is offline
-    if (!authToken || !authUser) {
+    // Graceful fallback ONLY for Mock / Demo mode (never in real mode)
+    if ((!authToken || !authUser) && backendMode !== 'real') {
       const lowerUser = username.toLowerCase();
       let role = 'viewer';
       if (lowerUser.includes('admin')) {
@@ -133,6 +150,10 @@ export function AuthProvider({ children }) {
         name: username.charAt(0).toUpperCase() + username.slice(1),
         email: `${username}@deployhub.internal`,
       };
+    }
+
+    if (!authToken || !authUser) {
+      throw new Error('Authentication failed. Please verify your credentials and backend connection.');
     }
 
     setToken(authToken);
@@ -175,6 +196,7 @@ export function AuthProvider({ children }) {
     token,
     loading,
     sessionExpired,
+    backendMode,
     setSessionExpired,
     login,
     logout,

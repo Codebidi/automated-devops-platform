@@ -16,12 +16,14 @@ import {
   AlertTriangle,
   Zap,
   Loader2,
+  XCircle,
+  Activity,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import SecretsChecklist from '../components/SecretsChecklist';
 import { Button, Card, Input, Badge, Skeleton } from '../components/ui';
-import { fetchPlatformConfig, updatePlatformConfig, saveGithubToken } from '../api/pipelineApi';
+import { fetchPlatformConfig, updatePlatformConfig, saveGithubToken, fetchDiagnostics } from '../api/pipelineApi';
 
 export default function Settings({ onRepoChange }) {
   const { isAdmin } = useAuth();
@@ -36,6 +38,22 @@ export default function Settings({ onRepoChange }) {
   const [tokenInput, setTokenInput] = useState('');
   const [showToken, setShowToken] = useState(false);
   const [savingToken, setSavingToken] = useState(false);
+
+  // Connection diagnostics state
+  const [diagnostics, setDiagnostics] = useState(null);
+  const [runningChecks, setRunningChecks] = useState(false);
+
+  const handleRunDiagnostics = async () => {
+    setRunningChecks(true);
+    try {
+      const res = await fetchDiagnostics();
+      setDiagnostics(res);
+    } catch (err) {
+      toast.error(err.message || 'Failed to run connection checks');
+    } finally {
+      setRunningChecks(false);
+    }
+  };
 
   useEffect(() => {
     async function load() {
@@ -71,8 +89,8 @@ export default function Settings({ onRepoChange }) {
       setIsEditingRepo(false);
       if (onRepoChange) onRepoChange(cleanRepo);
       toast.success(`Repository configuration saved: "${cleanRepo}"`);
-    } catch {
-      toast.error('Failed to save repository configuration.');
+    } catch (err) {
+      toast.error(err.message || 'Failed to save repository configuration.');
     }
   };
 
@@ -399,6 +417,93 @@ export default function Settings({ onRepoChange }) {
           </div>
         </div>
       </Card>
+
+      {/* Connection Checks / Preflight Diagnostics Card (Admin only) */}
+      {isAdmin && (
+        <Card className="p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <Activity className="w-5 h-5 text-brand-500" />
+                <h2 className="text-base font-heading font-bold text-content-primary">
+                  Connection Checks
+                </h2>
+              </div>
+              <p className="text-xs text-content-secondary mt-1">
+                Verify database connectivity, GitHub token, workflow files, secrets, ECR registry, and health probe.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {diagnostics?.checked_at && (
+                <span className="text-[11px] font-mono text-content-muted">
+                  Last run: {new Date(diagnostics.checked_at).toLocaleTimeString()}
+                </span>
+              )}
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleRunDiagnostics}
+                isLoading={runningChecks}
+                leftIcon={<Zap className="w-3.5 h-3.5" />}
+              >
+                Run checks
+              </Button>
+            </div>
+          </div>
+
+          {diagnostics ? (
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-3 text-xs font-mono pb-2 border-b border-border-subtle">
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                  PASS: {diagnostics.summary?.pass ?? 0}
+                </span>
+                <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                  WARN: {diagnostics.summary?.warn ?? 0}
+                </span>
+                <span className="text-rose-600 dark:text-rose-400 font-semibold">
+                  FAIL: {diagnostics.summary?.fail ?? 0}
+                </span>
+              </div>
+              {diagnostics.checks?.map((c) => {
+                const isPass = c.status === 'PASS';
+                const isWarn = c.status === 'WARN';
+                const Icon = isPass ? CheckCircle2 : isWarn ? AlertTriangle : XCircle;
+                const badgeClass = isPass
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                  : isWarn
+                  ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                  : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800';
+                return (
+                  <div
+                    key={c.id}
+                    className="p-3 rounded-xl bg-surface-subtle border border-border-subtle flex flex-col gap-1"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-heading font-semibold text-content-primary">
+                        {c.name}
+                      </span>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeClass}`}>
+                        <Icon className="w-3 h-3" aria-hidden="true" />
+                        <span>{c.status}</span>
+                      </span>
+                    </div>
+                    <p className="text-xs text-content-secondary">{c.message}</p>
+                    {c.status !== 'PASS' && c.fix && (
+                      <p className="text-[11px] font-mono text-content-muted bg-surface px-2 py-1 rounded border border-border-subtle mt-1">
+                        Fix: {c.fix}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-content-muted italic">
+              Click &ldquo;Run checks&rdquo; to inspect your live environment configuration.
+            </p>
+          )}
+        </Card>
+      )}
 
       {/* Secrets Checklist Card */}
       <Card className="p-6">

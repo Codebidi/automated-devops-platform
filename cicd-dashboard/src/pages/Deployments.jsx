@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Rocket, CheckCircle2, History, AlertCircle, RotateCcw, Shield } from 'lucide-react';
+import { Rocket, CheckCircle2, History, AlertCircle, RotateCcw, Shield, Download } from 'lucide-react';
 import DeploymentTimeline from '../components/DeploymentTimeline';
+import HealthIndicator from '../components/HealthIndicator';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { Button, Modal, Input, Card, Skeleton, EmptyState } from '../components/ui';
-import { fetchDeployments, rollbackDeployment } from '../api/pipelineApi';
+import { fetchDeployments, rollbackDeployment, importDeploymentsHistory } from '../api/pipelineApi';
 import { formatSha } from '../utils/formatters';
 
 export default function Deployments() {
@@ -16,6 +17,8 @@ export default function Deployments() {
   const [modalOpen, setModalOpen] = useState(false);
   const [typedConfirm, setTypedConfirm] = useState('');
   const [rollingBack, setRollingBack] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const loadDeployments = async () => {
     try {
@@ -57,6 +60,22 @@ export default function Deployments() {
     }
   };
 
+  const handleConfirmImport = async () => {
+    setImporting(true);
+    try {
+      const res = await importDeploymentsHistory();
+      setImportModalOpen(false);
+      toast.success(
+        `Imported ${res.imported} deployment(s) from GitHub (${res.skipped} already recorded).`
+      );
+      await loadDeployments();
+    } catch (err) {
+      toast.error(err.message || 'Failed to import deployment history');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const currentLive = deployments.find(d => d.isCurrentLive);
 
   return (
@@ -92,8 +111,9 @@ export default function Deployments() {
               </div>
             </div>
 
-            <div className="text-right text-xs text-content-secondary font-mono">
-              Deployed: {new Date(currentLive.timestamp).toLocaleString()}
+            <div className="flex flex-col items-end gap-1.5 text-right text-xs text-content-secondary font-mono">
+              <HealthIndicator status={currentLive.healthStatus || 'unknown'} compact />
+              <span>Deployed: {new Date(currentLive.timestamp).toLocaleString()}</span>
             </div>
           </div>
         </Card>
@@ -108,9 +128,21 @@ export default function Deployments() {
               Promotion Timeline
             </h2>
           </div>
-          <span className="text-xs text-content-muted">
-            {deployments.length} releases recorded
-          </span>
+          <div className="flex items-center gap-3">
+            {isAdmin && !loading && deployments.length === 0 && (
+              <Button
+                variant="primary"
+                size="sm"
+                leftIcon={<Download className="w-3.5 h-3.5" />}
+                onClick={() => setImportModalOpen(true)}
+              >
+                Import history from GitHub
+              </Button>
+            )}
+            <span className="text-xs text-content-muted">
+              {deployments.length} releases recorded
+            </span>
+          </div>
         </div>
 
         {loading ? (
@@ -168,6 +200,38 @@ export default function Deployments() {
               disabled={typedConfirm !== 'ROLLBACK' || rollingBack}
             >
               Execute Rollback
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Import History Confirmation Modal */}
+      <Modal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        title="Import Deployment History from GitHub"
+        description="Creates deployment records from past successful pipeline runs on your deploy branch."
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-content-secondary leading-relaxed">
+            This will import successful non-PR runs from GitHub Actions into the deployments table.
+            Only the newest imported release will be marked as active with health set to &ldquo;unknown&rdquo;.
+            Already-imported runs are skipped automatically.
+          </p>
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-border-subtle">
+            <Button
+              variant="secondary"
+              onClick={() => setImportModalOpen(false)}
+              disabled={importing}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleConfirmImport}
+              isLoading={importing}
+            >
+              Import History
             </Button>
           </div>
         </div>

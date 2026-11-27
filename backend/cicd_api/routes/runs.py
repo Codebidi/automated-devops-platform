@@ -1,14 +1,35 @@
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, current_app
 from .helpers import parse_pagination, paginate_list
+from ..db import get_db, db_fetchone
 from ..services.errors import NotFoundError
 
 runs_bp = Blueprint("runs", __name__, url_prefix="/api")
+
+
+def _sync_learned_registry(provider) -> None:
+    """If ECR_REGISTRY is unset, learn it from the most recent webhook deployment image_uri."""
+    if not hasattr(provider, "ecr_registry"):
+        return
+    if provider.ecr_registry or getattr(provider, "learned_registry", None):
+        return
+    try:
+        conn = get_db()
+        row = db_fetchone(
+            conn,
+            "SELECT image_uri FROM deployments WHERE image_uri IS NOT NULL AND image_uri LIKE '%/%' ORDER BY id DESC LIMIT 1",
+        )
+        if row and row.get("image_uri"):
+            provider.learned_registry = row["image_uri"].split("/", 1)[0]
+    except Exception:
+        pass
+
 
 @runs_bp.route("/runs", methods=["GET"])
 def list_runs():
     """Returns paginated, filtered pipeline runs sorted newest first."""
     provider = current_app.config["PROVIDER"]
+    _sync_learned_registry(provider)
 
     status = request.args.get("status")
     branch = request.args.get("branch")
@@ -32,6 +53,7 @@ def list_runs():
 def get_run(run_id: str):
     """Returns detailed run metadata including its 4 pipeline stages."""
     provider = current_app.config["PROVIDER"]
+    _sync_learned_registry(provider)
     run_data = provider.get_run(run_id)
     return jsonify(run_data), 200
 

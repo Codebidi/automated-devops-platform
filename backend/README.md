@@ -105,6 +105,8 @@ All endpoints are prefixed with `/api`.
 | `GET` | `/api/deployments` | viewer | Release history with `can_rollback` indicators (newest first) |
 | `GET` | `/api/deployments/current` | viewer | Currently active production deployment metadata |
 | `POST` | `/api/deployments/<id>/rollback` | **admin** / API-Key | Rolls back production release to target deployment |
+| `POST` | `/api/deployments/import` | **admin** | Imports past successful runs from GitHub (idempotent) |
+| `GET` | `/api/diagnostics` | **admin** | Runs all 11 preflight checks (no secrets exposed) |
 | `GET` | `/api/users` | **admin** | List registered users (password hashes never exposed) |
 | `POST` | `/api/users` | **admin** | Create user account with role assignment |
 | `PATCH` | `/api/users/<id>` | **admin** | Update user role, status, or password (increments `token_version`) |
@@ -138,9 +140,17 @@ When `USE_MOCK=false`:
 
 ---
 
-## "Go Live" Steps (Transition to Real Mode)
+## Switch from Demo to Real (Checklist)
 
-1. **Update `.env`**:
+> **Env loading:** `python run.py` and `python manage.py` load `backend/.env` and the project-root `.env` automatically. Real OS environment variables always take priority.
+
+1. **Prepare EC2 and ECR**: Create an ECR repo (name only, e.g. `my-app`), install Docker + AWS CLI (or attach an IAM role with `AmazonEC2ContainerRegistryReadOnly`) on EC2, and open `APP_PORT` (default `5000`) + SSH (`22`) in the EC2 Security Group.
+2. **Add workflows, secrets, and variables to your app repository**:
+   - Copy `workflows/deploy.yml` and `workflows/rollback.yml` into `.github/workflows/` on the default branch (`main`).
+   - Add GitHub Secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY`, `WEBHOOK_SECRET`, `DASHBOARD_API_URL`.
+   - Add GitHub Variables: `ECR_REPOSITORY` (name only, e.g. `my-app`) and `APP_PORT` (default `5000`).
+3. **Confirm the pipeline is green**: Push to `main` and verify `deploy.yml` passes in GitHub Actions.
+4. **Configure `.env`**:
    ```ini
    USE_MOCK=false
    GITHUB_TOKEN=ghp_yourPersonalAccessTokenWithWorkflowScope
@@ -150,26 +160,43 @@ When `USE_MOCK=false`:
    GITHUB_WORKFLOW_FILE=deploy.yml
    ROLLBACK_WORKFLOW_FILE=rollback.yml
    AWS_REGION=us-east-1
-   ECR_REPOSITORY=123456789012.dkr.ecr.us-east-1.amazonaws.com/your-app
+   ECR_REGISTRY=123456789012.dkr.ecr.us-east-1.amazonaws.com
+   ECR_REPOSITORY=my-app
    EC2_HOST=ec2-xx-xx-xx-xx.compute-1.amazonaws.com
-   APP_HEALTH_URL=http://ec2-xx-xx-xx-xx.compute-1.amazonaws.com:8080/health
-   SECRET_KEY=generate-at-least-32-random-characters-here
+   APP_PORT=5000
+   APP_HEALTH_URL=http://ec2-xx-xx-xx-xx.compute-1.amazonaws.com:5000/health
+   SECRET_KEY=generate-at-least-32-hex-characters-here
    API_KEY=automation-key-for-headless-rollback
    WEBHOOK_SECRET=shared-secret-between-github-actions-and-dashboard
    ADMIN_USERNAME=admin
    ADMIN_PASSWORD=YourStrongInitialPassword123
    ```
-2. **Configure GitHub Repository Secrets**:
-   - `AWS_ACCESS_KEY_ID`: AWS IAM credentials with ECR push permissions
-   - `AWS_SECRET_ACCESS_KEY`: AWS IAM secret key
-   - `EC2_SSH_PRIVATE_KEY`: Private key (.pem) to SSH into EC2 instance
-   - `WEBHOOK_SECRET`: Matches `WEBHOOK_SECRET` in `.env`
-   - `DASHBOARD_API_URL`: Public HTTPS URL of the backend API
-3. **Commit Workflow Files**:
-   - Push `.github/workflows/deploy.yml` and `.github/workflows/rollback.yml` from `workflows/` into your repository.
-4. **Deploy Backend**:
-   - Start with `gunicorn -w 4 -b 0.0.0.0:8000 run:app`.
-   - On startup, the backend validates credentials and automatically creates the admin account.
+5. **Start DeployHub** (and reset or purge demo users if reusing an old database):
+   ```bash
+   python manage.py purge-demo-users
+   python manage.py create-admin
+   gunicorn -w 4 -b 0.0.0.0:8000 run:app
+   ```
+6. **Run preflight diagnostics**:
+   ```bash
+   python manage.py check
+   ```
+7. **Make the dashboard publicly reachable**: Expose port `8000`/`8080` via HTTPS (public server, ngrok, or Cloudflare Tunnel) and set GitHub secret `DASHBOARD_API_URL` to that URL.
+8. **Push again and watch the deployment appear** (or use `POST /api/deployments/import` for past runs).
+
+### Diagnostics Troubleshooting
+
+| Check | Common FAIL / WARN Cause | Fix |
+| :--- | :--- | :--- |
+| `database` | Unreachable DB or missing tables | Verify `DATABASE_URL` / `DATABASE_PATH` and run `init_db` |
+| `demo_users` | Demo accounts (`admin`/`developer`/`viewer`) present in real mode | Run `python manage.py purge-demo-users` or reset DB |
+| `secrets_config` | `SECRET_KEY` < 32 chars, placeholder, or missing `WEBHOOK_SECRET` | Generate hex secrets (`openssl rand -hex 24`) |
+| `github_connection` | 401 Bad credentials, 404 repo not found, or missing Actions scope | Check `GITHUB_OWNER`, `GITHUB_REPO`, and `GITHUB_TOKEN` |
+| `github_workflows` | `deploy.yml`/`rollback.yml` missing or no `workflow_dispatch` | Commit workflows to `.github/workflows/` on `main` |
+| `github_secrets_vars` | Missing required GitHub secret or `ECR_REPOSITORY` variable | Add all 8 secrets and `ECR_REPOSITORY` in GitHub Repo Settings |
+| `ecr_config` | Placeholder in `ECR_REPOSITORY` or unknown `ECR_REGISTRY` | Set `ECR_REPOSITORY=my-app` and `ECR_REGISTRY` |
+| `app_health` | Target unreachable or missing port when `APP_PORT` != 80/443 | Open `APP_PORT` in EC2 SG; include port in `APP_HEALTH_URL` |
+| `webhook_reachability` | `CORS_ORIGINS` or `DASHBOARD_API_URL` uses `localhost` | Use a public HTTPS URL or tunnel for `DASHBOARD_API_URL` |
 
 ---
 

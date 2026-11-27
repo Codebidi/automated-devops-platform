@@ -278,10 +278,43 @@ def init_db(app) -> None:
             db_commit(conn)
 
 # ---------------------------------------------------------------------------
-# Seeding
+# Seeding & Demo User Detection
 # ---------------------------------------------------------------------------
+DEMO_ACCOUNTS: dict[str, str] = {
+    "admin": "Admin@12345",
+    "developer": "Dev@123456",
+    "viewer": "View@12345",
+}
+
+
+def find_demo_users(conn) -> list[str]:
+    """Returns usernames of any known demo accounts that still have their demo password."""
+    from werkzeug.security import check_password_hash
+    found: list[str] = []
+    for uname, demo_pw in DEMO_ACCOUNTS.items():
+        row = db_fetchone(
+            conn,
+            "SELECT id, username, password_hash FROM users WHERE LOWER(username) = LOWER(?)",
+            (uname,),
+        )
+        if row and row.get("password_hash") and check_password_hash(row["password_hash"], demo_pw):
+            found.append(row["username"])
+    return found
+
+
+def purge_demo_users(conn) -> list[str]:
+    """Deletes ONLY the known demo usernames if they still use their demo passwords."""
+    to_delete = find_demo_users(conn)
+    for uname in to_delete:
+        db_execute(conn, "DELETE FROM users WHERE LOWER(username) = LOWER(?)", (uname,))
+    if to_delete:
+        db_commit(conn)
+    return to_delete
+
+
 def seed_database(app) -> None:
     """Seeds initial users and deployments if tables are empty."""
+    from .security import validate_password_policy
     cfg = app.config["APP_CONFIG"]
     use_pg = _is_postgres(cfg)
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -310,6 +343,10 @@ def seed_database(app) -> None:
                     db_commit(conn)
                     logger.info("Mock mode: seeded 3 demo users (admin, developer, viewer).")
                 elif cfg.admin_password:
+                    if not validate_password_policy(cfg.admin_password):
+                        raise ValueError(
+                            "ADMIN_PASSWORD does not meet password policy (10-128 chars, must include letters and numbers)."
+                        )
                     insert_returning_id(
                         conn,
                         "INSERT INTO users (username, full_name, password_hash, role, is_active, token_version, created_at) "
@@ -318,6 +355,15 @@ def seed_database(app) -> None:
                     )
                     db_commit(conn)
                     logger.info("Real mode: seeded admin user '%s'.", cfg.admin_username)
+
+            if not cfg.use_mock:
+                active_demos = find_demo_users(conn)
+                if active_demos:
+                    logger.warning(
+                        "SECURITY WARNING: Real mode detected active demo user accounts (%s). "
+                        "Run 'python manage.py purge-demo-users' to remove them.",
+                        ", ".join(active_demos),
+                    )
 
             row2 = db_fetchone(conn, "SELECT COUNT(*) AS n FROM deployments")
             dep_count = row2["n"]
@@ -351,6 +397,96 @@ def seed_database(app) -> None:
                     )
                 db_commit(conn)
                 logger.info("Mock mode: seeded %d successful deployments (1 current).", len(seed_runs))
+
+            repo_row = db_fetchone(conn, "SELECT COUNT(*) AS n FROM repositories")
+            if repo_row["n"] == 0:
+                seed_owner = cfg.github_owner or ("codebidi" if cfg.use_mock else None)
+                seed_repo = cfg.github_repo or ("ai-devops-platform" if cfg.use_mock else None)
+                if seed_owner and seed_repo:
+                    upsert_active_repository(
+                        conn,
+                        owner=seed_owner,
+                        repo=seed_repo,
+                        branch=cfg.github_branch,
+                        workflow_file=cfg.github_workflow_file,
+                        rollback_workflow_file=cfg.rollback_workflow_file,
+                    )
+                    logger.info("Seeded active repository '%s/%s'.", seed_owner, seed_repo)
+
+
+def get_active_repository(conn) -> dict | None:
+    """Returns the currently active repository row, if any."""
+    return db_fetchone(conn, "SELECT * FROM repositories WHERE is_active = 1 LIMIT 1")
+
+
+def list_repositories(conn) -> list[dict]:
+    """Returns all saved repositories ordered by active first, then updated_at desc."""
+    return db_fetchall(
+        conn,
+        "SELECT id, owner, repo, full_name, branch, workflow_file, rollback_workflow_file, is_active, created_at, updated_at "
+        "FROM repositories ORDER BY is_active DESC, updated_at DESC",
+    )
+
+
+def upsert_active_repository(
+    conn,
+    owner: str,
+    repo: str,
+    branch: str = "main",
+    workflow_file: str = "deploy.yml",
+    rollback_workflow_file: str = "rollback.yml",
+) -> dict:
+    """Inserts or activates a repository in the repositories table and persists settings."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    full_name = f"{owner}/{repo}"
+    db_execute(conn, "UPDATE repositories SET is_active = 0 WHERE is_active = 1")
+    existing = db_fetchone(
+        conn,
+        "SELECT id FROM repositories WHERE LOWER(full_name) = LOWER(?)",
+        (full_name,),
+    )
+    if existing:
+        db_execute(
+            conn,
+            "UPDATE repositories SET owner = ?, repo = ?, full_name = ?, branch = ?, "
+            "workflow_file = ?, rollback_workflow_file = ?, is_active = 1, updated_at = ? WHERE id = ?",
+            (owner, repo, full_name, branch, workflow_file, rollback_workflow_file, now_iso, existing["id"]),
+        )
+        repo_id = existing["id"]
+    else:
+        repo_id = insert_returning_id(
+            conn,
+            "INSERT INTO repositories (owner, repo, full_name, branch, workflow_file, rollback_workflow_file, is_active, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)",
+            (owner, repo, full_name, branch, workflow_file, rollback_workflow_file, now_iso, now_iso),
+        )
+    set_platform_setting(conn, "github_owner", owner, commit=False)
+    set_platform_setting(conn, "github_repo", repo, commit=False)
+    db_commit(conn)
+    return db_fetchone(conn, "SELECT * FROM repositories WHERE id = ?", (repo_id,))
+
+
+def set_platform_setting(conn, key: str, value: str | None, commit: bool = True) -> None:
+    """Upserts a key/value pair into platform_settings."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    existing = db_fetchone(conn, "SELECT key FROM platform_settings WHERE key = ?", (key,))
+    if existing:
+        db_execute(conn, "UPDATE platform_settings SET value = ?, updated_at = ? WHERE key = ?", (value, now_iso, key))
+    else:
+        db_execute(conn, "INSERT INTO platform_settings (key, value, updated_at) VALUES (?, ?, ?)", (key, value, now_iso))
+    if commit:
+        db_commit(conn)
+
+
+def record_audit_log(conn, actor: str, action: str, target: str | None = None, details: str | None = None) -> None:
+    """Records an administrative or deployment audit event."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    insert_returning_id(
+        conn,
+        "INSERT INTO audit_logs (actor, action, target, details, created_at) VALUES (?, ?, ?, ?, ?)",
+        (actor, action, target, details, now_iso),
+    )
+    db_commit(conn)
 
 # ---------------------------------------------------------------------------
 # Input hardening

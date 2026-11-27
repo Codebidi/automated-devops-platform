@@ -24,7 +24,7 @@ export default function Topbar({
 }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, backendMode } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
@@ -82,6 +82,12 @@ export default function Topbar({
             <GitBranch className="w-3 h-3 text-brand-500" />
             main
           </span>
+
+          {backendMode === 'mock' && (
+            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/60 dark:border-amber-800/60">
+              Demo data
+            </span>
+          )}
         </nav>
       </div>
 

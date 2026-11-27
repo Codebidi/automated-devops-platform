@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, current_app
-from ..db import get_db, db_execute, db_fetchone, db_fetchall, insert_returning_id
+from ..db import get_db, db_execute, db_fetchone, db_fetchall, insert_returning_id, _validate_run_id
 
 deployments_bp = Blueprint("deployments", __name__, url_prefix="/api/deployments")
 
@@ -94,3 +94,60 @@ def rollback(deployment_id: int):
         "deployment_id": target["id"],
         "image_tag": target["image_tag"],
     }), 202
+
+
+@deployments_bp.route("/import", methods=["POST"])
+def import_deployments():
+    """Imports past successful deploy-branch runs from GitHub into deployments (admin only, idempotent)."""
+    cfg = current_app.config["APP_CONFIG"]
+    provider = current_app.config["PROVIDER"]
+    conn = get_db()
+
+    runs = provider.list_runs(status="success", branch=cfg.github_branch)
+    deploy_runs = [r for r in runs if r.get("deploys")]
+
+    existing_rows = db_fetchall(conn, "SELECT run_id FROM deployments WHERE run_id IS NOT NULL")
+    existing_run_ids = {row["run_id"] for row in existing_rows if row.get("run_id") is not None}
+
+    has_current = bool(db_fetchone(conn, "SELECT id FROM deployments WHERE is_current = 1 LIMIT 1"))
+
+    imported = 0
+    skipped = 0
+
+    for idx, r in enumerate(deploy_runs):
+        safe_rid = _validate_run_id(r.get("id"))
+        if safe_rid is not None and safe_rid in existing_run_ids:
+            skipped += 1
+            continue
+
+        is_current = 1 if (not has_current and imported == 0) else 0
+        if is_current:
+            has_current = True
+
+        deployed_at = r.get("finished_at") or r.get("started_at") or datetime.now(timezone.utc).isoformat()
+        insert_returning_id(
+            conn,
+            "INSERT INTO deployments (run_id, commit_sha, commit_message, author, image_tag, image_uri, "
+            "status, health, deployed_at, is_current, rolled_back_from) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'success', 'unknown', ?, ?, NULL)",
+            (
+                safe_rid,
+                r.get("commit_sha") or "unknown",
+                r.get("message") or "",
+                r.get("author") or "Unknown",
+                r.get("image_tag") or f"v2.4.{r.get('run_number', 0)}-{r.get('short_sha', 'unknown')}",
+                r.get("image_uri"),
+                deployed_at,
+                is_current,
+            ),
+        )
+        if safe_rid is not None:
+            existing_run_ids.add(safe_rid)
+        imported += 1
+
+    conn.commit()
+    return jsonify({
+        "imported": imported,
+        "skipped": skipped,
+        "total": len(deploy_runs),
+    }), 200

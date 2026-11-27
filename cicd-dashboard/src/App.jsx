@@ -69,7 +69,7 @@ function AppShell() {
 
   const { isRefreshing, lastUpdated, refreshNow } = usePolling(() => {
     setRefreshKey((k) => k + 1);
-  }, 10000, true);
+  }, 3600000, true);
 
   return (
     <div className="min-h-screen bg-canvas text-content-primary flex transition-colors duration-200">
